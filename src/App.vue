@@ -10,6 +10,35 @@ const stageConfig = ref({
 	height: 600,
 });
 
+// 工具面板参数
+const contrast = ref<number>(0); // 对比度：-100 到 100
+const temperature = ref<number>(0); // 色温：-100 到 100
+
+// 处理对比度变化
+const handleContrastChange = (value: number) => {
+	contrast.value = value;
+	if (imageEditor.value) {
+		imageEditor.value.setContrast(value);
+	}
+};
+
+// 处理色温变化
+const handleTemperatureChange = (value: number) => {
+	temperature.value = value;
+	if (imageEditor.value) {
+		imageEditor.value.setTemperature(value);
+	}
+};
+
+// 重置所有调整
+const handleReset = () => {
+	contrast.value = 0;
+	temperature.value = 0;
+	if (imageEditor.value) {
+		imageEditor.value.resetFilters();
+	}
+};
+
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
@@ -46,6 +75,9 @@ const handleFileUpload = async (event: Event) => {
 		// 加载图片
 		if (imageEditor.value) {
 			try {
+				// 重置滤镜参数
+				contrast.value = 0;
+				temperature.value = 0;
 				await imageEditor.value.loadImage(result);
 			} catch (error) {
 				console.error("加载图片失败:", error);
@@ -98,8 +130,65 @@ onBeforeUnmount(() => {
 			</div>
 		</div>
 
-		<div class="canvas-container" v-show="imageUrl">
-			<div ref="containerRef" class="konva-container"></div>
+		<div class="editor-wrapper" v-show="imageUrl">
+			<!-- 工具面板 -->
+			<div class="tool-panel">
+				<h3 class="tool-panel-title">图片调整</h3>
+				
+				<!-- 对比度调节 -->
+				<div class="tool-item">
+					<label class="tool-label">
+						<span>对比度</span>
+						<span class="tool-value">{{ contrast }}</span>
+					</label>
+					<input
+						type="range"
+						min="-100"
+						max="100"
+						step="1"
+						v-model.number="contrast"
+						@input="handleContrastChange(contrast)"
+						class="tool-slider"
+					/>
+					<div class="tool-range-labels">
+						<span>-100</span>
+						<span>0</span>
+						<span>100</span>
+					</div>
+				</div>
+
+				<!-- 色温调节 -->
+				<div class="tool-item">
+					<label class="tool-label">
+						<span>色温</span>
+						<span class="tool-value">{{ temperature }}</span>
+					</label>
+					<input
+						type="range"
+						min="-100"
+						max="100"
+						step="1"
+						v-model.number="temperature"
+						@input="handleTemperatureChange(temperature)"
+						class="tool-slider"
+					/>
+					<div class="tool-range-labels">
+						<span>冷</span>
+						<span>0</span>
+						<span>暖</span>
+					</div>
+				</div>
+
+				<!-- 重置按钮 -->
+				<button @click="handleReset" class="reset-button">
+					重置
+				</button>
+			</div>
+
+			<!-- 画布容器 -->
+			<div class="canvas-container">
+				<div ref="containerRef" class="konva-container"></div>
+			</div>
 		</div>
 
 		<div class="tips" v-if="!imageUrl">
@@ -157,6 +246,128 @@ onBeforeUnmount(() => {
 	background: #f0f0f0;
 	transform: translateY(-2px);
 	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.editor-wrapper {
+	display: flex;
+	gap: 20px;
+	justify-content: center;
+	align-items: flex-start;
+}
+
+.tool-panel {
+	background: white;
+	border-radius: 12px;
+	padding: 24px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+	min-width: 280px;
+}
+
+.tool-panel-title {
+	margin: 0 0 24px 0;
+	font-size: 1.25rem;
+	color: #333;
+	font-weight: 600;
+}
+
+.tool-item {
+	margin-bottom: 32px;
+}
+
+.tool-item:last-of-type {
+	margin-bottom: 24px;
+}
+
+.tool-label {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+	font-size: 0.95rem;
+	color: #555;
+	font-weight: 500;
+}
+
+.tool-value {
+	color: #667eea;
+	font-weight: 600;
+	font-size: 1rem;
+}
+
+.tool-slider {
+	width: 100%;
+	height: 6px;
+	border-radius: 3px;
+	background: #e0e0e0;
+	outline: none;
+	-webkit-appearance: none;
+	appearance: none;
+	cursor: pointer;
+	transition: background 0.3s ease;
+}
+
+.tool-slider:hover {
+	background: #d0d0d0;
+}
+
+.tool-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #667eea;
+	cursor: pointer;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	transition: all 0.2s ease;
+}
+
+.tool-slider::-webkit-slider-thumb:hover {
+	background: #5568d3;
+	transform: scale(1.1);
+}
+
+.tool-slider::-moz-range-thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #667eea;
+	cursor: pointer;
+	border: none;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	transition: all 0.2s ease;
+}
+
+.tool-slider::-moz-range-thumb:hover {
+	background: #5568d3;
+	transform: scale(1.1);
+}
+
+.tool-range-labels {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 8px;
+	font-size: 0.75rem;
+	color: #999;
+}
+
+.reset-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #f5f5f5;
+	color: #666;
+	border: 1px solid #e0e0e0;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+}
+
+.reset-button:hover {
+	background: #eeeeee;
+	border-color: #d0d0d0;
+	color: #333;
 }
 
 .canvas-container {

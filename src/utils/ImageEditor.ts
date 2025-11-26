@@ -97,6 +97,9 @@ export class ImageEditor {
 						draggable: true,
 					});
 
+					// 启用缓存以提高滤镜性能
+					konvaImage.cache();
+
 					// 添加点击事件
 					konvaImage.on("click", () => this.handleImageClick());
 
@@ -189,6 +192,105 @@ export class ImageEditor {
 			return null;
 		}
 		return this.stage.toDataURL({ mimeType, quality });
+	}
+
+	private currentContrast: number = 0;
+	private currentTemperature: number = 0;
+
+	/**
+	 * 应用所有滤镜
+	 */
+	private applyFilters(): void {
+		if (!this.imageNode) return;
+
+		const filters: any[] = [];
+		const hasContrast = this.currentContrast !== 0;
+		const hasTemperature = this.currentTemperature !== 0;
+
+		// 应用对比度滤镜
+		// Konva 的对比度值范围是 -1 到 1，需要将 -100 到 100 转换为 -1 到 1
+		if (hasContrast) {
+			filters.push(Konva.Filters.Contrast);
+		}
+
+		// 应用色温滤镜
+		if (hasTemperature) {
+			filters.push(Konva.Filters.RGB);
+		}
+
+		// 先设置 filters 数组
+		this.imageNode.filters(filters);
+
+		// 然后设置对比度参数（范围 -1 到 1）
+		if (hasContrast) {
+			// 将 -100 到 100 转换为 -1 到 1
+			this.imageNode.contrast(this.currentContrast / 100);
+		} else {
+			this.imageNode.contrast(0);
+		}
+
+		// 设置色温参数
+		if (hasTemperature) {
+			// 计算 RGB 调整值
+			// 暖色调：增加红色，减少蓝色
+			// 冷色调：增加蓝色，减少红色
+			let red = 0;
+			let blue = 0;
+
+			if (this.currentTemperature > 0) {
+				// 暖色调
+				red = this.currentTemperature;
+				blue = -this.currentTemperature * 0.5;
+			} else {
+				// 冷色调
+				red = this.currentTemperature * 0.5;
+				blue = -this.currentTemperature;
+			}
+
+			this.imageNode.red(red);
+			this.imageNode.green(0);
+			this.imageNode.blue(blue);
+		} else {
+			this.imageNode.red(0);
+			this.imageNode.green(0);
+			this.imageNode.blue(0);
+		}
+
+		// 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
+		this.imageNode.cache();
+		// 重绘画布
+		this.layer?.draw();
+	}
+
+	/**
+	 * 设置对比度
+	 * @param contrast 对比度值，范围 -100 到 100，0 为原始值
+	 */
+	public setContrast(contrast: number): void {
+		if (!this.imageNode) return;
+		this.currentContrast = contrast;
+		this.applyFilters();
+	}
+
+	/**
+	 * 设置色温
+	 * @param temperature 色温值，范围 -100 到 100，0 为原始值
+	 *                    -100 为冷色调（蓝色），100 为暖色调（橙红色）
+	 */
+	public setTemperature(temperature: number): void {
+		if (!this.imageNode) return;
+		this.currentTemperature = temperature;
+		this.applyFilters();
+	}
+
+	/**
+	 * 重置所有滤镜效果
+	 */
+	public resetFilters(): void {
+		if (!this.imageNode) return;
+		this.currentContrast = 0;
+		this.currentTemperature = 0;
+		this.applyFilters();
 	}
 
 	/**
