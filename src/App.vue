@@ -1,50 +1,28 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
-import Konva from "konva";
+import { ImageEditor } from "./utils/ImageEditor";
 
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
-const stage = ref<Konva.Stage | null>(null);
-const layer = ref<Konva.Layer | null>(null);
-const transformer = ref<Konva.Transformer | null>(null);
-const imageNode = ref<any>(null);
+const imageEditor = ref<ImageEditor | null>(null);
 const stageConfig = ref({
 	width: 800,
 	height: 600,
 });
 
-// 初始化 Konva Stage
-const initStage = () => {
+// 初始化图片编辑器
+const initImageEditor = () => {
 	if (!containerRef.value) return;
 	
-	// 如果已存在，先销毁
-	if (stage.value) {
-		stage.value.destroy();
-	}
-	
-	// 创建新的 Stage
-	stage.value = new Konva.Stage({
-		container: containerRef.value,
+	imageEditor.value = new ImageEditor(containerRef.value, {
 		width: stageConfig.value.width,
 		height: stageConfig.value.height,
-	});
-	
-	// 创建 Layer
-	layer.value = new Konva.Layer();
-	stage.value.add(layer.value as any);
-	
-	// 创建 Transformer
-	transformer.value = new Konva.Transformer({
 		rotateEnabled: false,
 	});
-	layer.value.add(transformer.value as any);
-	
-	// 添加点击事件监听
-	stage.value.on("click", handleStageClick);
 };
 
 // 处理图片上传
-const handleFileUpload = (event: Event) => {
+const handleFileUpload = async (event: Event) => {
 	const target = event.target as HTMLInputElement;
 	const file = target.files?.[0];
 	if (!file) return;
@@ -56,93 +34,26 @@ const handleFileUpload = (event: Event) => {
 	}
 
 	const reader = new FileReader();
-	reader.onload = (e) => {
+	reader.onload = async (e) => {
 		const result = e.target?.result as string;
 		imageUrl.value = result;
 		
-		// 创建图片对象并加载到 Konva
-		nextTick(() => {
-			loadImageToKonva(result);
-		});
+		// 确保编辑器已初始化
+		if (!imageEditor.value && containerRef.value) {
+			initImageEditor();
+		}
+		
+		// 加载图片
+		if (imageEditor.value) {
+			try {
+				await imageEditor.value.loadImage(result);
+			} catch (error) {
+				console.error("加载图片失败:", error);
+				alert("加载图片失败，请重试");
+			}
+		}
 	};
 	reader.readAsDataURL(file);
-};
-
-// 将图片加载到 Konva
-const loadImageToKonva = (url: string) => {
-	if (!stage.value || !layer.value || !transformer.value) {
-		// 如果 stage 未初始化，先初始化
-		if (!stage.value) {
-			initStage();
-		}
-		if (!stage.value || !layer.value || !transformer.value) return;
-	}
-	
-	// 如果已有图片节点，先移除
-	if (imageNode.value) {
-		imageNode.value.destroy();
-		imageNode.value = null;
-	}
-	
-	const image = new Image();
-	image.onload = () => {
-		const stageWidth = stage.value!.width();
-		const stageHeight = stage.value!.height();
-		
-		// 计算图片缩放比例以适应画布
-		const scale = Math.min(
-			stageWidth / image.width,
-			stageHeight / image.height,
-			1 // 不放大，只缩小
-		);
-		
-		// 居中显示
-		const x = (stageWidth - image.width * scale) / 2;
-		const y = (stageHeight - image.height * scale) / 2;
-		
-		// 创建 Konva 图片节点
-		const konvaImage = new Konva.Image({
-			image: image,
-			x: x,
-			y: y,
-			scaleX: scale,
-			scaleY: scale,
-			draggable: true,
-		});
-		
-		// 添加点击事件
-		konvaImage.on("click", handleImageClick);
-		
-		// 添加到图层
-		layer.value!.add(konvaImage as any);
-		
-		// 保存引用
-		imageNode.value = konvaImage;
-		
-		// 附加变换器
-		transformer.value!.nodes([konvaImage]);
-		
-		// 重绘画布
-		layer.value!.draw();
-	};
-	image.src = url;
-};
-
-// 图片节点点击事件
-const handleImageClick = () => {
-	if (transformer.value && imageNode.value) {
-		transformer.value.nodes([imageNode.value]);
-		layer.value?.draw();
-	}
-};
-
-// 画布点击事件（点击空白处取消选中）
-const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-	const clickedOnEmpty = e.target === e.target.getStage();
-	if (clickedOnEmpty && transformer.value) {
-		transformer.value.nodes([]);
-		layer.value?.draw();
-	}
 };
 
 onMounted(() => {
@@ -154,16 +65,17 @@ onMounted(() => {
 		};
 	}
 	
-	// 初始化 Stage
+	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(() => {
-		initStage();
+		initImageEditor();
 	});
 });
 
 onBeforeUnmount(() => {
 	// 清理资源
-	if (stage.value) {
-		stage.value.destroy();
+	if (imageEditor.value) {
+		imageEditor.value.destroy();
+		imageEditor.value = null;
 	}
 });
 </script>
@@ -186,7 +98,7 @@ onBeforeUnmount(() => {
 			</div>
 		</div>
 
-		<div class="canvas-container" v-if="imageUrl">
+		<div class="canvas-container" v-show="imageUrl">
 			<div ref="containerRef" class="konva-container"></div>
 		</div>
 
