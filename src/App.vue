@@ -42,7 +42,7 @@ const handleReset = () => {
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
-	
+
 	imageEditor.value = new ImageEditor(containerRef.value, {
 		width: stageConfig.value.width,
 		height: stageConfig.value.height,
@@ -66,12 +66,12 @@ const handleFileUpload = async (event: Event) => {
 	reader.onload = async (e) => {
 		const result = e.target?.result as string;
 		imageUrl.value = result;
-		
+
 		// 确保编辑器已初始化
 		if (!imageEditor.value && containerRef.value) {
 			initImageEditor();
 		}
-		
+
 		// 加载图片
 		if (imageEditor.value) {
 			try {
@@ -96,7 +96,7 @@ onMounted(() => {
 			height: window.innerHeight - 200,
 		};
 	}
-	
+
 	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(() => {
 		initImageEditor();
@@ -115,15 +115,9 @@ onBeforeUnmount(() => {
 <template>
 	<div class="app-container">
 		<div class="upload-section">
-			<h1>图片编辑器</h1>
+			<div class="title">图片编辑器</div>
 			<div class="upload-area">
-				<input
-					type="file"
-					accept="image/*"
-					@change="handleFileUpload"
-					id="file-input"
-					class="file-input"
-				/>
+				<input type="file" accept="image/*" @change="handleFileUpload" id="file-input" class="file-input" />
 				<label for="file-input" class="upload-button">
 					选择图片上传
 				</label>
@@ -134,22 +128,15 @@ onBeforeUnmount(() => {
 			<!-- 工具面板 -->
 			<div class="tool-panel">
 				<h3 class="tool-panel-title">图片调整</h3>
-				
+
 				<!-- 对比度调节 -->
 				<div class="tool-item">
 					<label class="tool-label">
 						<span>对比度</span>
 						<span class="tool-value">{{ contrast }}</span>
 					</label>
-					<input
-						type="range"
-						min="-100"
-						max="100"
-						step="1"
-						v-model.number="contrast"
-						@input="handleContrastChange(contrast)"
-						class="tool-slider"
-					/>
+					<input type="range" min="-100" max="100" step="1" v-model.number="contrast"
+						@input="handleContrastChange(contrast)" class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>-100</span>
 						<span>0</span>
@@ -163,15 +150,8 @@ onBeforeUnmount(() => {
 						<span>色温</span>
 						<span class="tool-value">{{ temperature }}</span>
 					</label>
-					<input
-						type="range"
-						min="-100"
-						max="100"
-						step="1"
-						v-model.number="temperature"
-						@input="handleTemperatureChange(temperature)"
-						class="tool-slider"
-					/>
+					<input type="range" min="-100" max="100" step="1" v-model.number="temperature"
+						@input="handleTemperatureChange(temperature)" class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>冷</span>
 						<span>0</span>
@@ -205,8 +185,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .app-container {
-	padding: 20px;
-	min-height: 100vh;
+	width: 100vw;
+	height: 100vh;
 	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
@@ -420,5 +400,12 @@ onBeforeUnmount(() => {
 	left: 0;
 	color: #42b883;
 	font-weight: bold;
+}
+
+.title {
+	font-size: 20px;
+	color: white;
+	font-weight: bold;
+	padding: 20px 0;
 }
 </style>
