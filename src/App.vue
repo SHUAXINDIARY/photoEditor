@@ -107,22 +107,68 @@ const clearStorage = () => {
 	}
 };
 
+// 节流函数（限制执行频率）
+const throttle = <T extends (...args: any[]) => void>(
+	func: T,
+	limit: number
+): ((...args: Parameters<T>) => void) => {
+	let inThrottle: boolean;
+	return function executedFunction(...args: Parameters<T>) {
+		if (!inThrottle) {
+			func(...args);
+			inThrottle = true;
+			setTimeout(() => (inThrottle = false), limit);
+		}
+	};
+};
+
+// 防抖函数（延迟执行）
+const debounce = <T extends (...args: any[]) => void>(
+	func: T,
+	wait: number
+): ((...args: Parameters<T>) => void) => {
+	let timeout: ReturnType<typeof setTimeout> | null = null;
+	return function executedFunction(...args: Parameters<T>) {
+		const later = () => {
+			timeout = null;
+			func(...args);
+		};
+		if (timeout) {
+			clearTimeout(timeout);
+		}
+		timeout = setTimeout(later, wait);
+	};
+};
+
+// 节流更新滤镜（每 50ms 最多更新一次）
+const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature', value: number) => {
+	if (!imageEditor.value) return;
+	if (type === 'contrast') {
+		imageEditor.value.setContrast(value);
+	} else {
+		imageEditor.value.setTemperature(value);
+	}
+}, 50);
+
+// 防抖保存状态（延迟 500ms）
+const debouncedSaveState = debounce(saveStateToStorage, 500);
+
 // 处理对比度变化
 const handleContrastChange = (value: number) => {
 	contrast.value = value;
-	if (imageEditor.value) {
-		imageEditor.value.setContrast(value);
-		saveStateToStorage();
-	}
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('contrast', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
 };
 
 // 处理色温变化
 const handleTemperatureChange = (value: number) => {
 	temperature.value = value;
-	if (imageEditor.value) {
-		imageEditor.value.setTemperature(value);
-		saveStateToStorage();
-	}
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('temperature', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
 };
 
 // 重置所有调整
@@ -250,7 +296,9 @@ const max = 999;
 						<span class="tool-value">{{ contrast }}</span>
 					</label>
 					<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
-						@input="handleContrastChange(contrast)" class="tool-slider" />
+						@input="handleContrastChange(contrast)"
+						@change="saveStateToStorage"
+						class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>{{ min }}</span>
 						<span>0</span>
@@ -265,7 +313,9 @@ const max = 999;
 						<span class="tool-value">{{ temperature }}</span>
 					</label>
 					<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
-						@input="handleTemperatureChange(temperature)" class="tool-slider" />
+						@input="handleTemperatureChange(temperature)"
+						@change="saveStateToStorage"
+						class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>冷</span>
 						<span>0</span>

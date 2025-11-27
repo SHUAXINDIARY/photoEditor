@@ -243,69 +243,96 @@ export class ImageEditor {
 	private currentContrast: number = 0;
 	private currentTemperature: number = 0;
 
+	private rafId: number | null = null;
+	private isUpdating: boolean = false;
+
 	/**
-	 * 应用所有滤镜
+	 * 应用所有滤镜（使用 requestAnimationFrame 优化性能）
 	 */
 	private applyFilters(): void {
+		if (!this.imageNode || this.isUpdating) return;
+
+		// 取消之前的动画帧请求
+		if (this.rafId !== null) {
+			cancelAnimationFrame(this.rafId);
+		}
+
+		// 使用 requestAnimationFrame 优化渲染
+		this.rafId = requestAnimationFrame(() => {
+			this.rafId = null;
+			this._applyFiltersSync();
+		});
+	}
+
+	/**
+	 * 同步应用滤镜
+	 */
+	private _applyFiltersSync(): void {
 		if (!this.imageNode) return;
 
-		const filters: any[] = [];
-		const hasContrast = this.currentContrast !== 0;
-		const hasTemperature = this.currentTemperature !== 0;
+		this.isUpdating = true;
 
-		// 应用对比度滤镜
-		// Konva 的对比度值范围是 -1 到 1，需要将 -100 到 100 转换为 -1 到 1
-		if (hasContrast) {
-			filters.push(Konva.Filters.Contrast);
-		}
+		try {
+			const filters: any[] = [];
+			const hasContrast = this.currentContrast !== 0;
+			const hasTemperature = this.currentTemperature !== 0;
 
-		// 应用色温滤镜
-		if (hasTemperature) {
-			filters.push(Konva.Filters.RGB);
-		}
-
-		// 先设置 filters 数组
-		this.imageNode.filters(filters);
-
-		// 然后设置对比度参数（范围 -1 到 1）
-		if (hasContrast) {
-			// 将 -100 到 100 转换为 -1 到 1
-			this.imageNode.contrast(this.currentContrast / 100);
-		} else {
-			this.imageNode.contrast(0);
-		}
-
-		// 设置色温参数
-		if (hasTemperature) {
-			// 计算 RGB 调整值
-			// 暖色调：增加红色，减少蓝色
-			// 冷色调：增加蓝色，减少红色
-			let red = 0;
-			let blue = 0;
-
-			if (this.currentTemperature > 0) {
-				// 暖色调
-				red = this.currentTemperature;
-				blue = -this.currentTemperature * 0.5;
-			} else {
-				// 冷色调
-				red = this.currentTemperature * 0.5;
-				blue = -this.currentTemperature;
+			// 应用对比度滤镜
+			// Konva 的对比度值范围是 -1 到 1，需要将 -100 到 100 转换为 -1 到 1
+			if (hasContrast) {
+				filters.push(Konva.Filters.Contrast);
 			}
 
-			this.imageNode.red(red);
-			this.imageNode.green(0);
-			this.imageNode.blue(blue);
-		} else {
-			this.imageNode.red(0);
-			this.imageNode.green(0);
-			this.imageNode.blue(0);
-		}
+			// 应用色温滤镜
+			if (hasTemperature) {
+				filters.push(Konva.Filters.RGB);
+			}
 
-		// 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
-		this.imageNode.cache();
-		// 重绘画布
-		this.layer?.draw();
+			// 先设置 filters 数组
+			this.imageNode.filters(filters);
+
+			// 然后设置对比度参数（范围 -1 到 1）
+			if (hasContrast) {
+				// 将 -100 到 100 转换为 -1 到 1
+				this.imageNode.contrast(this.currentContrast / 100);
+			} else {
+				this.imageNode.contrast(0);
+			}
+
+			// 设置色温参数
+			if (hasTemperature) {
+				// 计算 RGB 调整值
+				// 暖色调：增加红色，减少蓝色
+				// 冷色调：增加蓝色，减少红色
+				let red = 0;
+				let blue = 0;
+
+				if (this.currentTemperature > 0) {
+					// 暖色调
+					red = this.currentTemperature;
+					blue = -this.currentTemperature * 0.5;
+				} else {
+					// 冷色调
+					red = this.currentTemperature * 0.5;
+					blue = -this.currentTemperature;
+				}
+
+				this.imageNode.red(red);
+				this.imageNode.green(0);
+				this.imageNode.blue(blue);
+			} else {
+				this.imageNode.red(0);
+				this.imageNode.green(0);
+				this.imageNode.blue(0);
+			}
+
+			// 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
+			this.imageNode.cache();
+			// 重绘画布
+			this.layer?.draw();
+		} finally {
+			this.isUpdating = false;
+		}
 	}
 
 	/**
