@@ -204,7 +204,7 @@ onMounted(async () => {
 	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(async () => {
 		initImageEditor();
-		
+
 		// 尝试从缓存恢复状态
 		await nextTick();
 		const restored = await loadStateFromStorage();
@@ -221,6 +221,9 @@ onBeforeUnmount(() => {
 		imageEditor.value = null;
 	}
 });
+
+const min = -999;
+const max = 999;
 </script>
 
 <template>
@@ -246,12 +249,12 @@ onBeforeUnmount(() => {
 						<span>对比度</span>
 						<span class="tool-value">{{ contrast }}</span>
 					</label>
-					<input type="range" min="-100" max="100" step="1" v-model.number="contrast"
+					<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
 						@input="handleContrastChange(contrast)" class="tool-slider" />
 					<div class="tool-range-labels">
-						<span>-100</span>
+						<span>{{ min }}</span>
 						<span>0</span>
-						<span>100</span>
+						<span>{{ max }}</span>
 					</div>
 				</div>
 
@@ -261,7 +264,7 @@ onBeforeUnmount(() => {
 						<span>色温</span>
 						<span class="tool-value">{{ temperature }}</span>
 					</label>
-					<input type="range" min="-100" max="100" step="1" v-model.number="temperature"
+					<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
 						@input="handleTemperatureChange(temperature)" class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>冷</span>
