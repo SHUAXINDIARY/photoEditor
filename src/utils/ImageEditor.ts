@@ -13,6 +13,7 @@ export class ImageEditor {
 	private imageNode: Konva.Image | null = null;
 	private container: HTMLElement | null = null;
 	private config: ImageEditorConfig;
+	public onImageStateChange?: () => void; // 图片状态变化回调
 
 	constructor(container: HTMLElement, config: ImageEditorConfig) {
 		this.container = container;
@@ -103,6 +104,16 @@ export class ImageEditor {
 					// 添加点击事件
 					konvaImage.on("click", () => this.handleImageClick());
 
+					// 添加拖拽结束事件，用于保存状态
+					konvaImage.on("dragend", () => {
+						this.onImageStateChange?.();
+					});
+
+					// 添加变换结束事件，用于保存状态
+					konvaImage.on("transformend", () => {
+						this.onImageStateChange?.();
+					});
+
 					// 添加到图层
 					this.layer!.add(konvaImage as any);
 
@@ -168,6 +179,41 @@ export class ImageEditor {
 	 */
 	public getImageNode(): Konva.Image | null {
 		return this.imageNode;
+	}
+
+	/**
+	 * 获取图片状态（位置、缩放等）
+	 */
+	public getImageState(): {
+		x: number;
+		y: number;
+		scaleX: number;
+		scaleY: number;
+	} | null {
+		if (!this.imageNode) return null;
+		return {
+			x: this.imageNode.x(),
+			y: this.imageNode.y(),
+			scaleX: this.imageNode.scaleX(),
+			scaleY: this.imageNode.scaleY(),
+		};
+	}
+
+	/**
+	 * 设置图片状态（位置、缩放等）
+	 */
+	public setImageState(state: {
+		x: number;
+		y: number;
+		scaleX: number;
+		scaleY: number;
+	}): void {
+		if (!this.imageNode) return;
+		this.imageNode.x(state.x);
+		this.imageNode.y(state.y);
+		this.imageNode.scaleX(state.scaleX);
+		this.imageNode.scaleY(state.scaleY);
+		this.layer?.draw();
 	}
 
 	/**

@@ -14,11 +14,105 @@ const stageConfig = ref({
 const contrast = ref<number>(0); // 对比度：-100 到 100
 const temperature = ref<number>(0); // 色温：-100 到 100
 
+// localStorage 键名
+const STORAGE_KEY = "photoEditor_state";
+
+// 保存状态到本地缓存
+const saveStateToStorage = () => {
+	if (!imageUrl.value || !imageEditor.value) return;
+
+	const imageState = imageEditor.value.getImageState();
+	const state = {
+		imageUrl: imageUrl.value,
+		contrast: contrast.value,
+		temperature: temperature.value,
+		imageState: imageState,
+		timestamp: Date.now(),
+	};
+
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+	} catch (error) {
+		console.error("保存状态失败:", error);
+	}
+};
+
+// 从本地缓存恢复状态
+const loadStateFromStorage = async (): Promise<boolean> => {
+	try {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		if (!stored) return false;
+
+		const state = JSON.parse(stored);
+		if (!state.imageUrl) return false;
+
+		// 恢复图片 URL
+		imageUrl.value = state.imageUrl;
+
+		// 确保编辑器已初始化
+		if (!imageEditor.value && containerRef.value) {
+			initImageEditor();
+		}
+
+		// 等待编辑器初始化
+		await nextTick();
+
+		if (imageEditor.value) {
+			// 加载图片
+			await imageEditor.value.loadImage(state.imageUrl);
+
+			// 恢复滤镜参数
+			if (typeof state.contrast === "number") {
+				contrast.value = state.contrast;
+				imageEditor.value.setContrast(state.contrast);
+			}
+			if (typeof state.temperature === "number") {
+				temperature.value = state.temperature;
+				imageEditor.value.setTemperature(state.temperature);
+			}
+
+			// 恢复图片状态（位置、缩放）
+			if (state.imageState) {
+				await nextTick();
+				// 等待图片完全加载后再恢复状态
+				setTimeout(() => {
+					if (imageEditor.value) {
+						imageEditor.value.setImageState(state.imageState);
+					}
+				}, 100);
+			}
+
+			return true;
+		}
+	} catch (error) {
+		console.error("恢复状态失败:", error);
+	}
+	return false;
+};
+
+// 清除本地缓存
+const clearStorage = () => {
+	try {
+		localStorage.removeItem(STORAGE_KEY);
+		imageUrl.value = "";
+		contrast.value = 0;
+		temperature.value = 0;
+		if (imageEditor.value) {
+			imageEditor.value.clearImage();
+			imageEditor.value.resetFilters();
+		}
+		alert("缓存已清除");
+	} catch (error) {
+		console.error("清除缓存失败:", error);
+	}
+};
+
 // 处理对比度变化
 const handleContrastChange = (value: number) => {
 	contrast.value = value;
 	if (imageEditor.value) {
 		imageEditor.value.setContrast(value);
+		saveStateToStorage();
 	}
 };
 
@@ -27,6 +121,7 @@ const handleTemperatureChange = (value: number) => {
 	temperature.value = value;
 	if (imageEditor.value) {
 		imageEditor.value.setTemperature(value);
+		saveStateToStorage();
 	}
 };
 
@@ -48,6 +143,13 @@ const initImageEditor = () => {
 		height: stageConfig.value.height,
 		rotateEnabled: false,
 	});
+
+	// 设置图片状态变化回调
+	if (imageEditor.value) {
+		imageEditor.value.onImageStateChange = () => {
+			saveStateToStorage();
+		};
+	}
 };
 
 // 处理图片上传
@@ -79,6 +181,8 @@ const handleFileUpload = async (event: Event) => {
 				contrast.value = 0;
 				temperature.value = 0;
 				await imageEditor.value.loadImage(result);
+				// 保存状态
+				saveStateToStorage();
 			} catch (error) {
 				console.error("加载图片失败:", error);
 				alert("加载图片失败，请重试");
@@ -88,7 +192,7 @@ const handleFileUpload = async (event: Event) => {
 	reader.readAsDataURL(file);
 };
 
-onMounted(() => {
+onMounted(async () => {
 	// 初始化画布大小
 	if (typeof window !== "undefined") {
 		stageConfig.value = {
@@ -98,8 +202,15 @@ onMounted(() => {
 	}
 
 	// 初始化图片编辑器（容器始终存在，只是隐藏）
-	nextTick(() => {
+	nextTick(async () => {
 		initImageEditor();
+		
+		// 尝试从缓存恢复状态
+		await nextTick();
+		const restored = await loadStateFromStorage();
+		if (restored) {
+			console.log("已从缓存恢复图片状态");
+		}
 	});
 });
 
@@ -161,7 +272,12 @@ onBeforeUnmount(() => {
 
 				<!-- 重置按钮 -->
 				<button @click="handleReset" class="reset-button">
-					重置
+					重置调整
+				</button>
+
+				<!-- 清除缓存按钮 -->
+				<button @click="clearStorage" class="clear-button">
+					清除缓存
 				</button>
 			</div>
 
@@ -348,6 +464,26 @@ onBeforeUnmount(() => {
 	background: #eeeeee;
 	border-color: #d0d0d0;
 	color: #333;
+}
+
+.clear-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #ff6b6b;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	margin-top: 12px;
+}
+
+.clear-button:hover {
+	background: #ff5252;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
 }
 
 .canvas-container {
