@@ -250,6 +250,8 @@ export class ImageEditor {
 
 	private currentContrast: number = 0;
 	private currentTemperature: number = 0;
+	private currentEnhance: number = 0;
+	private currentBlur: number = 0;
 
 	private rafId: number | null = null;
 	private isUpdating: boolean = false;
@@ -284,6 +286,8 @@ export class ImageEditor {
 			const filters: any[] = [];
 			const hasContrast = this.currentContrast !== 0;
 			const hasTemperature = this.currentTemperature !== 0;
+			const hasEnhance = this.currentEnhance !== 0;
+			const hasBlur = this.currentBlur !== 0;
 
 			// 应用对比度滤镜
 			// Konva 的对比度值范围是 -1 到 1，需要将 -100 到 100 转换为 -1 到 1
@@ -294,6 +298,16 @@ export class ImageEditor {
 			// 应用色温自定义滤镜
 			if (hasTemperature) {
 				filters.push((Konva.Filters as any).Temperature);
+			}
+
+			// 应用增强滤镜
+			if (hasEnhance) {
+				filters.push(Konva.Filters.Enhance);
+			}
+
+			// 应用模糊滤镜
+			if (hasBlur) {
+				filters.push(Konva.Filters.Blur);
 			}
 
 			// 先设置 filters 数组
@@ -321,6 +335,22 @@ export class ImageEditor {
 				} else {
 					(this.imageNode as any).temperature = 0;
 				}
+			}
+
+			// 设置增强参数（范围 0 到 1）
+			if (hasEnhance) {
+				// 将 0 到 100 转换为 0 到 1
+				this.imageNode.enhance(this.currentEnhance / 100);
+			} else {
+				this.imageNode.enhance(0);
+			}
+
+			// 设置模糊参数（范围 0 到 20）
+			if (hasBlur) {
+				// 将 0 到 100 转换为 0 到 20
+				this.imageNode.blurRadius(this.currentBlur * 0.2);
+			} else {
+				this.imageNode.blurRadius(0);
 			}
 
 			// 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
@@ -354,12 +384,34 @@ export class ImageEditor {
 	}
 
 	/**
+	 * 设置增强
+	 * @param enhance 增强值，范围 0 到 100，0 为原始值
+	 */
+	public setEnhance(enhance: number): void {
+		if (!this.imageNode) return;
+		this.currentEnhance = enhance;
+		this.applyFilters();
+	}
+
+	/**
+	 * 设置模糊
+	 * @param blur 模糊值，范围 0 到 100，0 为原始值
+	 */
+	public setBlur(blur: number): void {
+		if (!this.imageNode) return;
+		this.currentBlur = blur;
+		this.applyFilters();
+	}
+
+	/**
 	 * 重置所有滤镜效果
 	 */
 	public resetFilters(): void {
 		if (!this.imageNode) return;
 		this.currentContrast = 0;
 		this.currentTemperature = 0;
+		this.currentEnhance = 0;
+		this.currentBlur = 0;
 		this.applyFilters();
 	}
 

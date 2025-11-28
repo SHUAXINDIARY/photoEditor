@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
 import { ImageEditor } from "./utils/ImageEditor";
-
+import { throttle, debounce } from "./utils/utils";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
 const imageEditor = ref<ImageEditor | null>(null);
@@ -13,6 +13,8 @@ const stageConfig = ref({
 // 工具面板参数
 const contrast = ref<number>(0); // 对比度：-100 到 100
 const temperature = ref<number>(0); // 色温：-100 到 100
+const enhance = ref<number>(0); // 增强：0 到 100
+const blur = ref<number>(0); // 模糊：0 到 100
 
 // localStorage 键名
 const STORAGE_KEY = "photoEditor_state";
@@ -26,6 +28,8 @@ const saveStateToStorage = () => {
 		imageUrl: imageUrl.value,
 		contrast: contrast.value,
 		temperature: temperature.value,
+		enhance: enhance.value,
+		blur: blur.value,
 		imageState: imageState,
 		timestamp: Date.now(),
 	};
@@ -70,6 +74,14 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 				temperature.value = state.temperature;
 				imageEditor.value.setTemperature(state.temperature);
 			}
+			if (typeof state.enhance === "number") {
+				enhance.value = state.enhance;
+				imageEditor.value.setEnhance(state.enhance);
+			}
+			if (typeof state.blur === "number") {
+				blur.value = state.blur;
+				imageEditor.value.setBlur(state.blur);
+			}
 
 			// 恢复图片状态（位置、缩放）
 			if (state.imageState) {
@@ -97,6 +109,8 @@ const clearStorage = () => {
 		imageUrl.value = "";
 		contrast.value = 0;
 		temperature.value = 0;
+		enhance.value = 0;
+		blur.value = 0;
 		if (imageEditor.value) {
 			imageEditor.value.clearImage();
 			imageEditor.value.resetFilters();
@@ -107,46 +121,17 @@ const clearStorage = () => {
 	}
 };
 
-// 节流函数（限制执行频率）
-const throttle = <T extends (...args: any[]) => void>(
-	func: T,
-	limit: number
-): ((...args: Parameters<T>) => void) => {
-	let inThrottle: boolean;
-	return function executedFunction(...args: Parameters<T>) {
-		if (!inThrottle) {
-			func(...args);
-			inThrottle = true;
-			setTimeout(() => (inThrottle = false), limit);
-		}
-	};
-};
-
-// 防抖函数（延迟执行）
-const debounce = <T extends (...args: any[]) => void>(
-	func: T,
-	wait: number
-): ((...args: Parameters<T>) => void) => {
-	let timeout: ReturnType<typeof setTimeout> | null = null;
-	return function executedFunction(...args: Parameters<T>) {
-		const later = () => {
-			timeout = null;
-			func(...args);
-		};
-		if (timeout) {
-			clearTimeout(timeout);
-		}
-		timeout = setTimeout(later, wait);
-	};
-};
-
 // 节流更新滤镜（每 50ms 最多更新一次）
-const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature', value: number) => {
+const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'enhance' | 'blur', value: number) => {
 	if (!imageEditor.value) return;
 	if (type === 'contrast') {
 		imageEditor.value.setContrast(value);
-	} else {
+	} else if (type === 'temperature') {
 		imageEditor.value.setTemperature(value);
+	} else if (type === 'enhance') {
+		imageEditor.value.setEnhance(value);
+	} else if (type === 'blur') {
+		imageEditor.value.setBlur(value);
 	}
 }, 50);
 
@@ -171,10 +156,30 @@ const handleTemperatureChange = (value: number) => {
 	debouncedSaveState();
 };
 
+// 处理增强变化
+const handleEnhanceChange = (value: number) => {
+	enhance.value = value;
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('enhance', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
+};
+
+// 处理模糊变化
+const handleBlurChange = (value: number) => {
+	blur.value = value;
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('blur', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
+};
+
 // 重置所有调整
 const handleReset = () => {
 	contrast.value = 0;
 	temperature.value = 0;
+	enhance.value = 0;
+	blur.value = 0;
 	if (imageEditor.value) {
 		imageEditor.value.resetFilters();
 	}
@@ -226,6 +231,8 @@ const handleFileUpload = async (event: Event) => {
 				// 重置滤镜参数
 				contrast.value = 0;
 				temperature.value = 0;
+				enhance.value = 0;
+				blur.value = 0;
 				await imageEditor.value.loadImage(result);
 				// 保存状态
 				saveStateToStorage();
@@ -317,6 +324,38 @@ const max = 999;
 						<span>暖</span>
 						<span>0</span>
 						<span>冷</span>
+					</div>
+				</div>
+
+				<!-- 增强调节 -->
+				<div class="tool-item">
+					<label class="tool-label">
+						<span>增强</span>
+						<span class="tool-value">{{ enhance }}</span>
+					</label>
+					<input type="range" min="0" max="100" step="1" v-model.number="enhance"
+						@input="handleEnhanceChange(enhance)" @change="saveStateToStorage"
+						class="tool-slider" />
+					<div class="tool-range-labels">
+						<span>0</span>
+						<span>50</span>
+						<span>100</span>
+					</div>
+				</div>
+
+				<!-- 模糊调节 -->
+				<div class="tool-item">
+					<label class="tool-label">
+						<span>模糊</span>
+						<span class="tool-value">{{ blur }}</span>
+					</label>
+					<input type="range" min="0" max="100" step="1" v-model.number="blur"
+						@input="handleBlurChange(blur)" @change="saveStateToStorage"
+						class="tool-slider" />
+					<div class="tool-range-labels">
+						<span>0</span>
+						<span>50</span>
+						<span>100</span>
 					</div>
 				</div>
 
