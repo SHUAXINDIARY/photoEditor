@@ -241,13 +241,13 @@ const handleExportBrush = async () => {
 
 	try {
 		const dataURL = await imageEditor.value.exportBrushLayer();
-		
+
 		// 创建下载链接
 		const link = document.createElement('a');
 		link.download = `brush-mask-${Date.now()}.png`;
 		link.href = dataURL;
 		link.click();
-		
+
 		alert("导出成功！");
 	} catch (error: any) {
 		console.error("导出失败:", error);
@@ -368,7 +368,7 @@ const max = 100;
 
 		<div class="editor-wrapper" v-show="imageUrl">
 			<!-- 工具面板 -->
-	<div>
+			<div class="tool-panels-container">
 				<div class="tool-panel">
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
@@ -502,11 +502,15 @@ const max = 100;
 	width: 100vw;
 	height: 100vh;
 	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
 .upload-section {
 	text-align: center;
-	margin-bottom: 20px;
+	padding: 20px 0;
+	flex-shrink: 0;
 }
 
 .upload-section h1 {
@@ -547,31 +551,61 @@ const max = 100;
 	gap: 20px;
 	justify-content: center;
 	align-items: flex-start;
-	padding: 0 20px;
+	padding: 0 20px 20px 20px;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
 }
 
-.tool-panel {
-	margin-bottom: 20px;
-	background: white;
-	border-radius: 12px;
-	padding: 24px;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+.tool-panels-container {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	max-height: 100%;
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex-shrink: 0;
 	min-width: 280px;
 }
 
+.tool-panels-container::-webkit-scrollbar {
+	width: 6px;
+}
+
+.tool-panels-container::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.tool-panels-container::-webkit-scrollbar-thumb {
+	background: rgba(0, 0, 0, 0.2);
+	border-radius: 3px;
+}
+
+.tool-panels-container::-webkit-scrollbar-thumb:hover {
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.tool-panel {
+	background: white;
+	border-radius: 12px;
+	padding: 20px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+	flex-shrink: 0;
+}
+
 .tool-panel-title {
-	margin: 0 0 24px 0;
+	margin: 0 0 20px 0;
 	font-size: 1.25rem;
 	color: #333;
 	font-weight: 600;
 }
 
 .tool-item {
-	margin-bottom: 32px;
+	margin-bottom: 24px;
 }
 
 .tool-item:last-of-type {
-	margin-bottom: 24px;
+	margin-bottom: 20px;
 }
 
 .tool-label {
@@ -756,10 +790,14 @@ const max = 100;
 .canvas-container {
 	display: flex;
 	justify-content: center;
+	align-items: center;
 	background: white;
 	border-radius: 12px;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 	overflow: auto;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
 }
 
 .konva-container {
@@ -771,11 +809,16 @@ const max = 100;
 .tips {
 	text-align: center;
 	color: white;
-	margin-top: 40px;
 	padding: 30px;
 	background: rgba(255, 255, 255, 0.1);
 	border-radius: 12px;
 	backdrop-filter: blur(10px);
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	overflow-y: auto;
 }
 
 .tips p {
