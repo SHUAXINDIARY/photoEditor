@@ -19,6 +19,7 @@ const blur = ref<number>(0); // 模糊：0 到 100
 
 // 画笔状态
 const isBrushMode = ref<boolean>(false);
+const brushSize = ref<number>(10); // 画笔粗细：1 到 50
 
 // localStorage 键名
 const STORAGE_KEY = "photoEditor_state";
@@ -121,7 +122,10 @@ const clearStorage = () => {
 		saturation.value = 0;
 		enhance.value = 0;
 		blur.value = 0;
+		isBrushMode.value = false;
+		brushSize.value = 10;
 		if (imageEditor.value) {
+			imageEditor.value.disableBrush();
 			imageEditor.value.clearImage();
 			imageEditor.value.resetFilters();
 		}
@@ -208,15 +212,23 @@ const handleReset = () => {
 // 切换画笔模式
 const toggleBrush = () => {
 	if (!imageEditor.value) return;
-	
+
 	isBrushMode.value = !isBrushMode.value;
-	
+
 	if (isBrushMode.value) {
 		// 开启画笔模式
-		imageEditor.value.enableBrush('#000000', 10);
+		imageEditor.value.enableBrush('#000000', brushSize.value);
 	} else {
 		// 关闭画笔模式
 		imageEditor.value.disableBrush();
+	}
+};
+
+// 处理画笔粗细变化
+const handleBrushSizeChange = (value: number) => {
+	brushSize.value = value;
+	if (imageEditor.value && isBrushMode.value) {
+		imageEditor.value.setBrushSize(value);
 	}
 };
 
@@ -333,7 +345,7 @@ const max = 100;
 
 		<div class="editor-wrapper" v-show="imageUrl">
 			<!-- 工具面板 -->
-	<div>
+			<div>
 				<div class="tool-panel">
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
@@ -418,16 +430,25 @@ const max = 100;
 					</button>
 				</div>
 				<div class="tool-panel">
-					<button 
-						@click="toggleBrush" 
-						:class="{ 'active': isBrushMode }"
-						class="brush-button">
+					<h3 class="tool-panel-title">画笔工具</h3>
+					<button @click="toggleBrush" :class="{ 'active': isBrushMode }" class="brush-button">
 						{{ isBrushMode ? '关闭画笔' : '开启画笔' }}
 					</button>
-					<button 
-						v-if="isBrushMode"
-						@click="imageEditor?.clearBrush()" 
-						class="clear-brush-button">
+					<!-- 画笔粗细调节（仅在画笔模式下显示） -->
+					<div v-if="isBrushMode" class="tool-item">
+						<label class="tool-label">
+							<span>画笔粗细</span>
+							<span class="tool-value">{{ brushSize }}</span>
+						</label>
+						<input type="range" min="1" max="50" step="1" v-model.number="brushSize"
+							@input="handleBrushSizeChange(brushSize)" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>1</span>
+							<span>25</span>
+							<span>50</span>
+						</div>
+					</div>
+					<button v-if="isBrushMode" @click="imageEditor?.clearBrush()" class="clear-brush-button">
 						清除画笔痕迹
 					</button>
 				</div>
@@ -691,7 +712,6 @@ const max = 100;
 	justify-content: center;
 	background: white;
 	border-radius: 12px;
-	padding: 20px;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 	overflow: auto;
 }

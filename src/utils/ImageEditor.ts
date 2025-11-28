@@ -540,6 +540,18 @@ export class ImageEditor {
 	}
 
 	/**
+	 * 设置画笔粗细
+	 */
+	public setBrushSize(size: number): void {
+		this.brushSize = Math.max(1, Math.min(50, size));
+		// 如果正在绘制，更新当前线条的粗细
+		if (this.brushLine) {
+			this.brushLine.strokeWidth(this.brushSize);
+			this.brushLayer?.draw();
+		}
+	}
+
+	/**
 	 * 清除所有画笔痕迹
 	 */
 	public clearBrush(): void {
