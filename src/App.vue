@@ -311,97 +311,94 @@ const max = 100;
 
 		<div class="editor-wrapper" v-show="imageUrl">
 			<!-- 工具面板 -->
-			<div class="tool-panel">
-				<h3 class="tool-panel-title">图片调整</h3>
-				<!-- 对比度调节 -->
-				<div class="tool-item">
-					<label class="tool-label">
-						<span>对比度</span>
-						<span class="tool-value">{{ contrast }}</span>
-					</label>
-					<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
-						@input="handleContrastChange(contrast)" @change="saveStateToStorage" class="tool-slider" />
-					<div class="tool-range-labels">
-						<span>{{ min }}</span>
-						<span>0</span>
-						<span>{{ max }}</span>
+			<div>
+				<div class="tool-panel">
+					<h3 class="tool-panel-title">图片调整</h3>
+					<!-- 对比度调节 -->
+					<div class="tool-item">
+						<label class="tool-label">
+							<span>对比度</span>
+							<span class="tool-value">{{ contrast }}</span>
+						</label>
+						<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
+							@input="handleContrastChange(contrast)" @change="saveStateToStorage" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>{{ min }}</span>
+							<span>0</span>
+							<span>{{ max }}</span>
+						</div>
 					</div>
-				</div>
-				<!-- 色温调节 -->
-				<div class="tool-item">
-					<label class="tool-label">
-						<span>色温</span>
-						<span class="tool-value">{{ temperature }}</span>
-					</label>
-					<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
-						@input="handleTemperatureChange(temperature)" @change="saveStateToStorage"
-						class="tool-slider" />
-					<div class="tool-range-labels">
-						<span>暖</span>
-						<span>0</span>
-						<span>冷</span>
+					<!-- 色温调节 -->
+					<div class="tool-item">
+						<label class="tool-label">
+							<span>色温</span>
+							<span class="tool-value">{{ temperature }}</span>
+						</label>
+						<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
+							@input="handleTemperatureChange(temperature)" @change="saveStateToStorage"
+							class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>暖</span>
+							<span>0</span>
+							<span>冷</span>
+						</div>
 					</div>
-				</div>
-				<!-- 饱和度调节 -->
-				<div class="tool-item">
-					<label class="tool-label">
-						<span>饱和度</span>
-						<span class="tool-value">{{ saturation }}</span>
-					</label>
-					<input
-						type="range"
-						:min="min"
-						:max="max"
-						step="1"
-						v-model.number="saturation"
-						@input="handleSaturationChange(saturation)"
-						@change="saveStateToStorage"
-						class="tool-slider"
-					/>
-					<div class="tool-range-labels">
-						<span>{{ min }}</span>
-						<span>0</span>
-						<span>{{ max }}</span>
+					<!-- 饱和度调节 -->
+					<div class="tool-item">
+						<label class="tool-label">
+							<span>饱和度</span>
+							<span class="tool-value">{{ saturation }}</span>
+						</label>
+						<input type="range" :min="min" :max="max" step="1" v-model.number="saturation"
+							@input="handleSaturationChange(saturation)" @change="saveStateToStorage"
+							class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>{{ min }}</span>
+							<span>0</span>
+							<span>{{ max }}</span>
+						</div>
 					</div>
-				</div>
-				<!-- 模糊调节 -->
-				<div class="tool-item">
-					<label class="tool-label">
-						<span>模糊</span>
-						<span class="tool-value">{{ blur }}</span>
-					</label>
-					<input type="range" min="0" max="100" step="1" v-model.number="blur" @input="handleBlurChange(blur)"
-						@change="saveStateToStorage" class="tool-slider" />
-					<div class="tool-range-labels">
-						<span>0</span>
-						<span>50</span>
-						<span>100</span>
+					<!-- 模糊调节 -->
+					<div class="tool-item">
+						<label class="tool-label">
+							<span>模糊</span>
+							<span class="tool-value">{{ blur }}</span>
+						</label>
+						<input type="range" min="0" max="100" step="1" v-model.number="blur"
+							@input="handleBlurChange(blur)" @change="saveStateToStorage" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>0</span>
+							<span>50</span>
+							<span>100</span>
+						</div>
 					</div>
-				</div>
-				<!-- 增强调节 -->
-				<div class="tool-item">
-					<label class="tool-label">
-						<span>滤镜效果增强</span>
-						<span class="tool-value">{{ enhance }}</span>
-					</label>
-					<input type="range" min="0" max="100" step="1" v-model.number="enhance"
-						@input="handleEnhanceChange(enhance)" @change="saveStateToStorage" class="tool-slider" />
-					<div class="tool-range-labels">
-						<span>0</span>
-						<span>50</span>
-						<span>100</span>
+					<!-- 增强调节 -->
+					<div class="tool-item">
+						<label class="tool-label">
+							<span>滤镜效果增强</span>
+							<span class="tool-value">{{ enhance }}</span>
+						</label>
+						<input type="range" min="0" max="100" step="1" v-model.number="enhance"
+							@input="handleEnhanceChange(enhance)" @change="saveStateToStorage" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>0</span>
+							<span>50</span>
+							<span>100</span>
+						</div>
 					</div>
+					<!-- 重置按钮 -->
+					<button @click="handleReset" class="reset-button">
+						重置调整
+					</button>
+					<!-- 清除缓存按钮 -->
+					<button @click="clearStorage" class="clear-button">
+						清除缓存
+					</button>
 				</div>
-				<!-- 重置按钮 -->
-				<button @click="handleReset" class="reset-button">
-					重置调整
-				</button>
-				<!-- 清除缓存按钮 -->
-				<button @click="clearStorage" class="clear-button">
-					清除缓存
-				</button>
+				<div class="tool-panel">
+					<button>开启涂抹</button>
+				</div>
 			</div>
-
 			<!-- 画布容器 -->
 			<div class="canvas-container">
 				<div ref="containerRef" class="konva-container"></div>
@@ -470,9 +467,11 @@ const max = 100;
 	gap: 20px;
 	justify-content: center;
 	align-items: flex-start;
+	padding: 0 20px;
 }
 
 .tool-panel {
+	margin-bottom: 20px;
 	background: white;
 	border-radius: 12px;
 	padding: 24px;
