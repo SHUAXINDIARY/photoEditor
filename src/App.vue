@@ -452,7 +452,14 @@ const max = 100;
 						清除缓存
 					</button>
 				</div>
-				<div class="tool-panel">
+			</div>
+			<!-- 画布容器 -->
+			<div class="canvas-container">
+				<div ref="containerRef" class="konva-container"></div>
+			</div>
+			<!-- 画笔工具面板（右侧独立） -->
+			<div class="brush-panel-container">
+				<div class="tool-panel brush-panel">
 					<h3 class="tool-panel-title">画笔工具</h3>
 					<button @click="toggleBrush" :class="{ 'active': isBrushMode }" class="brush-button">
 						{{ isBrushMode ? '关闭画笔' : '开启画笔' }}
@@ -478,10 +485,6 @@ const max = 100;
 						导出画笔图层
 					</button>
 				</div>
-			</div>
-			<!-- 画布容器 -->
-			<div class="canvas-container">
-				<div ref="containerRef" class="konva-container"></div>
 			</div>
 		</div>
 
@@ -591,6 +594,9 @@ const max = 100;
 	padding: 20px;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 	flex-shrink: 0;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
 }
 
 .tool-panel-title {
@@ -798,6 +804,41 @@ const max = 100;
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
+}
+
+.brush-panel-container {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+	width: 280px;
+	min-width: 280px;
+	max-width: 280px;
+	max-height: 100%;
+	overflow-y: auto;
+	overflow-x: visible;
+}
+
+.brush-panel-container::-webkit-scrollbar {
+	width: 6px;
+}
+
+.brush-panel-container::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.brush-panel-container::-webkit-scrollbar-thumb {
+	background: rgba(0, 0, 0, 0.2);
+	border-radius: 3px;
+}
+
+.brush-panel-container::-webkit-scrollbar-thumb:hover {
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.brush-panel {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
 }
 
 .konva-container {
