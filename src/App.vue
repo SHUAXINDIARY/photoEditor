@@ -13,6 +13,7 @@ const stageConfig = ref({
 // 工具面板参数
 const contrast = ref<number>(0); // 对比度：-100 到 100
 const temperature = ref<number>(0); // 色温：-100 到 100
+const saturation = ref<number>(0); // 饱和度：-100 到 100
 const enhance = ref<number>(0); // 增强：0 到 100
 const blur = ref<number>(0); // 模糊：0 到 100
 
@@ -28,6 +29,7 @@ const saveStateToStorage = () => {
 		imageUrl: imageUrl.value,
 		contrast: contrast.value,
 		temperature: temperature.value,
+		saturation: saturation.value,
 		enhance: enhance.value,
 		blur: blur.value,
 		imageState: imageState,
@@ -74,6 +76,10 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 				temperature.value = state.temperature;
 				imageEditor.value.setTemperature(state.temperature);
 			}
+			if (typeof state.saturation === "number") {
+				saturation.value = state.saturation;
+				imageEditor.value.setSaturation(state.saturation);
+			}
 			if (typeof state.enhance === "number") {
 				enhance.value = state.enhance;
 				imageEditor.value.setEnhance(state.enhance);
@@ -109,6 +115,7 @@ const clearStorage = () => {
 		imageUrl.value = "";
 		contrast.value = 0;
 		temperature.value = 0;
+		saturation.value = 0;
 		enhance.value = 0;
 		blur.value = 0;
 		if (imageEditor.value) {
@@ -122,12 +129,14 @@ const clearStorage = () => {
 };
 
 // 节流更新滤镜（每 50ms 最多更新一次）
-const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'enhance' | 'blur', value: number) => {
+const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur', value: number) => {
 	if (!imageEditor.value) return;
 	if (type === 'contrast') {
 		imageEditor.value.setContrast(value);
 	} else if (type === 'temperature') {
 		imageEditor.value.setTemperature(value);
+	} else if (type === 'saturation') {
+		imageEditor.value.setSaturation(value);
 	} else if (type === 'enhance') {
 		imageEditor.value.setEnhance(value);
 	} else if (type === 'blur') {
@@ -156,6 +165,13 @@ const handleTemperatureChange = (value: number) => {
 	debouncedSaveState();
 };
 
+// 处理饱和度变化
+const handleSaturationChange = (value: number) => {
+	saturation.value = value;
+	throttledUpdateFilter('saturation', value);
+	debouncedSaveState();
+};
+
 // 处理增强变化
 const handleEnhanceChange = (value: number) => {
 	enhance.value = value;
@@ -178,6 +194,7 @@ const handleBlurChange = (value: number) => {
 const handleReset = () => {
 	contrast.value = 0;
 	temperature.value = 0;
+	saturation.value = 0;
 	enhance.value = 0;
 	blur.value = 0;
 	if (imageEditor.value) {
@@ -231,6 +248,7 @@ const handleFileUpload = async (event: Event) => {
 				// 重置滤镜参数
 				contrast.value = 0;
 				temperature.value = 0;
+				saturation.value = 0;
 				enhance.value = 0;
 				blur.value = 0;
 				await imageEditor.value.loadImage(result);
@@ -275,8 +293,8 @@ onBeforeUnmount(() => {
 	}
 });
 
-const min = -999;
-const max = 999;
+const min = -100;
+const max = 100;
 </script>
 
 <template>
@@ -295,7 +313,6 @@ const max = 999;
 			<!-- 工具面板 -->
 			<div class="tool-panel">
 				<h3 class="tool-panel-title">图片调整</h3>
-
 				<!-- 对比度调节 -->
 				<div class="tool-item">
 					<label class="tool-label">
@@ -310,7 +327,6 @@ const max = 999;
 						<span>{{ max }}</span>
 					</div>
 				</div>
-
 				<!-- 色温调节 -->
 				<div class="tool-item">
 					<label class="tool-label">
@@ -326,44 +342,60 @@ const max = 999;
 						<span>冷</span>
 					</div>
 				</div>
-
-				<!-- 增强调节 -->
+				<!-- 饱和度调节 -->
 				<div class="tool-item">
 					<label class="tool-label">
-						<span>增强</span>
-						<span class="tool-value">{{ enhance }}</span>
+						<span>饱和度</span>
+						<span class="tool-value">{{ saturation }}</span>
 					</label>
-					<input type="range" min="0" max="100" step="1" v-model.number="enhance"
-						@input="handleEnhanceChange(enhance)" @change="saveStateToStorage"
-						class="tool-slider" />
+					<input
+						type="range"
+						:min="min"
+						:max="max"
+						step="1"
+						v-model.number="saturation"
+						@input="handleSaturationChange(saturation)"
+						@change="saveStateToStorage"
+						class="tool-slider"
+					/>
 					<div class="tool-range-labels">
+						<span>{{ min }}</span>
 						<span>0</span>
-						<span>50</span>
-						<span>100</span>
+						<span>{{ max }}</span>
 					</div>
 				</div>
-
 				<!-- 模糊调节 -->
 				<div class="tool-item">
 					<label class="tool-label">
 						<span>模糊</span>
 						<span class="tool-value">{{ blur }}</span>
 					</label>
-					<input type="range" min="0" max="100" step="1" v-model.number="blur"
-						@input="handleBlurChange(blur)" @change="saveStateToStorage"
-						class="tool-slider" />
+					<input type="range" min="0" max="100" step="1" v-model.number="blur" @input="handleBlurChange(blur)"
+						@change="saveStateToStorage" class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>0</span>
 						<span>50</span>
 						<span>100</span>
 					</div>
 				</div>
-
+				<!-- 增强调节 -->
+				<div class="tool-item">
+					<label class="tool-label">
+						<span>滤镜效果增强</span>
+						<span class="tool-value">{{ enhance }}</span>
+					</label>
+					<input type="range" min="0" max="100" step="1" v-model.number="enhance"
+						@input="handleEnhanceChange(enhance)" @change="saveStateToStorage" class="tool-slider" />
+					<div class="tool-range-labels">
+						<span>0</span>
+						<span>50</span>
+						<span>100</span>
+					</div>
+				</div>
 				<!-- 重置按钮 -->
 				<button @click="handleReset" class="reset-button">
 					重置调整
 				</button>
-
 				<!-- 清除缓存按钮 -->
 				<button @click="clearStorage" class="clear-button">
 					清除缓存
