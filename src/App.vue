@@ -296,9 +296,7 @@ const max = 999;
 						<span class="tool-value">{{ contrast }}</span>
 					</label>
 					<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
-						@input="handleContrastChange(contrast)"
-						@change="saveStateToStorage"
-						class="tool-slider" />
+						@input="handleContrastChange(contrast)" @change="saveStateToStorage" class="tool-slider" />
 					<div class="tool-range-labels">
 						<span>{{ min }}</span>
 						<span>0</span>
@@ -313,13 +311,12 @@ const max = 999;
 						<span class="tool-value">{{ temperature }}</span>
 					</label>
 					<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
-						@input="handleTemperatureChange(temperature)"
-						@change="saveStateToStorage"
+						@input="handleTemperatureChange(temperature)" @change="saveStateToStorage"
 						class="tool-slider" />
 					<div class="tool-range-labels">
-						<span>冷</span>
-						<span>0</span>
 						<span>暖</span>
+						<span>0</span>
+						<span>冷</span>
 					</div>
 				</div>
 
