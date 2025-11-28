@@ -232,6 +232,29 @@ const handleBrushSizeChange = (value: number) => {
 	}
 };
 
+// 导出画笔图层
+const handleExportBrush = async () => {
+	if (!imageEditor.value) {
+		alert("请先上传图片");
+		return;
+	}
+
+	try {
+		const dataURL = await imageEditor.value.exportBrushLayer();
+		
+		// 创建下载链接
+		const link = document.createElement('a');
+		link.download = `brush-mask-${Date.now()}.png`;
+		link.href = dataURL;
+		link.click();
+		
+		alert("导出成功！");
+	} catch (error: any) {
+		console.error("导出失败:", error);
+		alert(error.message || "导出失败，请重试");
+	}
+};
+
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
@@ -345,7 +368,7 @@ const max = 100;
 
 		<div class="editor-wrapper" v-show="imageUrl">
 			<!-- 工具面板 -->
-			<div>
+	<div>
 				<div class="tool-panel">
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
@@ -450,6 +473,9 @@ const max = 100;
 					</div>
 					<button v-if="isBrushMode" @click="imageEditor?.clearBrush()" class="clear-brush-button">
 						清除画笔痕迹
+					</button>
+					<button v-if="isBrushMode" @click="handleExportBrush" class="export-button">
+						导出画笔图层
 					</button>
 				</div>
 			</div>
@@ -705,6 +731,26 @@ const max = 100;
 	background: #f57c00;
 	transform: translateY(-1px);
 	box-shadow: 0 4px 8px rgba(255, 152, 0, 0.3);
+}
+
+.export-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #2196f3;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	margin-top: 12px;
+}
+
+.export-button:hover {
+	background: #1976d2;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
 }
 
 .canvas-container {

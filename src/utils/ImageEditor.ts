@@ -30,6 +30,13 @@ export class ImageEditor {
 	private brushPoints: number[] = [];
 	private brushColor: string = '#000000';
 	private brushSize: number = 10;
+	
+	// 原始图片尺寸（用于导出）
+	private originalImageWidth: number = 0;
+	private originalImageHeight: number = 0;
+	private imageScale: number = 1; // 图片在画布上的缩放比例
+	private imageOffsetX: number = 0; // 图片在画布上的 X 偏移
+	private imageOffsetY: number = 0; // 图片在画布上的 Y 偏移
 
 	constructor(container: HTMLElement, config: ImageEditorConfig) {
 		this.container = container;
@@ -97,16 +104,23 @@ export class ImageEditor {
 					const stageWidth = this.stage!.width();
 					const stageHeight = this.stage!.height();
 
+					// 保存原始图片尺寸
+					this.originalImageWidth = image.width;
+					this.originalImageHeight = image.height;
+
 					// 计算图片缩放比例以适应画布
 					const scale = Math.min(
 						stageWidth / image.width,
 						stageHeight / image.height,
 						1 // 不放大，只缩小
 					);
+					this.imageScale = scale;
 
 					// 居中显示
 					const x = (stageWidth - image.width * scale) / 2;
 					const y = (stageHeight - image.height * scale) / 2;
+					this.imageOffsetX = x;
+					this.imageOffsetY = y;
 
 					// 创建 Konva 图片节点
 					const konvaImage = new Konva.Image({
@@ -131,7 +145,17 @@ export class ImageEditor {
 
 					// 添加变换结束事件，用于保存状态
 					konvaImage.on("transformend", () => {
+						// 更新图片位置和缩放信息
+						this.imageOffsetX = konvaImage.x();
+						this.imageOffsetY = konvaImage.y();
+						this.imageScale = konvaImage.scaleX();
 						this.onImageStateChange?.();
+					});
+					
+					// 添加拖拽事件，更新位置信息
+					konvaImage.on("dragmove", () => {
+						this.imageOffsetX = konvaImage.x();
+						this.imageOffsetY = konvaImage.y();
 					});
 
 					// 添加到图层
@@ -233,6 +257,10 @@ export class ImageEditor {
 		this.imageNode.y(state.y);
 		this.imageNode.scaleX(state.scaleX);
 		this.imageNode.scaleY(state.scaleY);
+		// 更新位置和缩放信息
+		this.imageOffsetX = state.x;
+		this.imageOffsetY = state.y;
+		this.imageScale = state.scaleX;
 		this.layer?.draw();
 	}
 
@@ -617,6 +645,94 @@ export class ImageEditor {
 	private handleBrushEnd = (): void => {
 		this.isDrawing = false;
 		this.brushLine = null;
+	}
+
+	/**
+	 * 导出画笔图层为图片
+	 * 返回黑色背景、白色画笔的图片，尺寸与原始图片一致
+	 */
+	public exportBrushLayer(): Promise<string> {
+		return new Promise((resolve, reject) => {
+			if (!this.brushLayer || !this.originalImageWidth || !this.originalImageHeight) {
+				reject(new Error("画笔图层或图片未加载"));
+				return;
+			}
+
+			// 检查是否有画笔痕迹
+			const brushChildren = this.brushLayer.getChildren();
+			if (brushChildren.length === 0) {
+				reject(new Error("没有画笔痕迹可导出"));
+				return;
+			}
+
+			try {
+				// 创建临时 canvas，尺寸为原始图片尺寸，黑色背景
+				const tempCanvas = document.createElement('canvas');
+				tempCanvas.width = this.originalImageWidth;
+				tempCanvas.height = this.originalImageHeight;
+				const ctx = tempCanvas.getContext('2d');
+				if (!ctx) {
+					reject(new Error("无法创建 canvas 上下文"));
+					return;
+				}
+
+				// 填充黑色背景
+				ctx.fillStyle = '#000000';
+				ctx.fillRect(0, 0, this.originalImageWidth, this.originalImageHeight);
+
+				// 设置画笔样式为白色
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineCap = 'round';
+				ctx.lineJoin = 'round';
+
+				// 遍历画笔图层中的所有线条
+				brushChildren.forEach((child) => {
+					if (child instanceof Konva.Line) {
+						const originalPoints = child.points();
+						
+						if (originalPoints.length < 4) return; // 至少需要两个点
+
+						// 设置画笔粗细（转换为原始图片尺寸）
+						const brushWidth = child.strokeWidth() / this.imageScale;
+						ctx.lineWidth = brushWidth;
+
+						// 开始路径
+						ctx.beginPath();
+
+						// 转换每个点的坐标并绘制
+						for (let i = 0; i < originalPoints.length; i += 2) {
+							// 将 stage 坐标转换为图片坐标
+							const stageX = originalPoints[i];
+							const stageY = originalPoints[i + 1];
+							
+							// 减去图片在 stage 上的偏移
+							const relativeX = stageX - this.imageOffsetX;
+							const relativeY = stageY - this.imageOffsetY;
+							
+							// 转换为原始图片坐标
+							const imageX = relativeX / this.imageScale;
+							const imageY = relativeY / this.imageScale;
+							
+							if (i === 0) {
+								ctx.moveTo(imageX, imageY);
+							} else {
+								ctx.lineTo(imageX, imageY);
+							}
+						}
+
+						// 绘制路径
+						ctx.stroke();
+					}
+				});
+
+				// 导出为图片
+				const dataURL = tempCanvas.toDataURL('image/png');
+
+				resolve(dataURL);
+			} catch (error) {
+				reject(error);
+			}
+		});
 	}
 
 	/**
