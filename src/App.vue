@@ -17,6 +17,9 @@ const saturation = ref<number>(0); // 饱和度：-100 到 100
 const enhance = ref<number>(0); // 增强：0 到 100
 const blur = ref<number>(0); // 模糊：0 到 100
 
+// 画笔状态
+const isBrushMode = ref<boolean>(false);
+
 // localStorage 键名
 const STORAGE_KEY = "photoEditor_state";
 
@@ -202,6 +205,21 @@ const handleReset = () => {
 	}
 };
 
+// 切换画笔模式
+const toggleBrush = () => {
+	if (!imageEditor.value) return;
+	
+	isBrushMode.value = !isBrushMode.value;
+	
+	if (isBrushMode.value) {
+		// 开启画笔模式
+		imageEditor.value.enableBrush('#000000', 10);
+	} else {
+		// 关闭画笔模式
+		imageEditor.value.disableBrush();
+	}
+};
+
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
@@ -288,6 +306,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
 	// 清理资源
 	if (imageEditor.value) {
+		// 先关闭画笔模式
+		if (isBrushMode.value) {
+			imageEditor.value.disableBrush();
+		}
 		imageEditor.value.destroy();
 		imageEditor.value = null;
 	}
@@ -311,7 +333,7 @@ const max = 100;
 
 		<div class="editor-wrapper" v-show="imageUrl">
 			<!-- 工具面板 -->
-			<div>
+	<div>
 				<div class="tool-panel">
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
@@ -396,7 +418,18 @@ const max = 100;
 					</button>
 				</div>
 				<div class="tool-panel">
-					<button>开启涂抹</button>
+					<button 
+						@click="toggleBrush" 
+						:class="{ 'active': isBrushMode }"
+						class="brush-button">
+						{{ isBrushMode ? '关闭画笔' : '开启画笔' }}
+					</button>
+					<button 
+						v-if="isBrushMode"
+						@click="imageEditor?.clearBrush()" 
+						class="clear-brush-button">
+						清除画笔痕迹
+					</button>
 				</div>
 			</div>
 			<!-- 画布容器 -->
@@ -604,6 +637,53 @@ const max = 100;
 	background: #ff5252;
 	transform: translateY(-1px);
 	box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+.brush-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #4caf50;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	margin-bottom: 12px;
+}
+
+.brush-button:hover {
+	background: #45a049;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
+}
+
+.brush-button.active {
+	background: #ff9800;
+}
+
+.brush-button.active:hover {
+	background: #f57c00;
+}
+
+.clear-brush-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #ff9800;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+}
+
+.clear-brush-button:hover {
+	background: #f57c00;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(255, 152, 0, 0.3);
 }
 
 .canvas-container {

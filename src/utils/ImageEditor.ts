@@ -17,11 +17,19 @@ export interface ImageEditorConfig {
 export class ImageEditor {
 	private stage: Konva.Stage | null = null;
 	private layer: Konva.Layer | null = null;
+	private brushLayer: Konva.Layer | null = null; // 画笔图层
 	private transformer: Konva.Transformer | null = null;
 	private imageNode: Konva.Image | null = null;
 	private container: HTMLElement | null = null;
 	private config: ImageEditorConfig;
 	public onImageStateChange?: () => void; // 图片状态变化回调
+	
+	// 画笔相关属性
+	private isDrawing: boolean = false;
+	private brushLine: Konva.Line | null = null;
+	private brushPoints: number[] = [];
+	private brushColor: string = '#000000';
+	private brushSize: number = 10;
 
 	constructor(container: HTMLElement, config: ImageEditorConfig) {
 		this.container = container;
@@ -49,9 +57,13 @@ export class ImageEditor {
 			height: this.config.height,
 		});
 
-		// 创建 Layer
+		// 创建 Layer（用于图片和变换器）
 		this.layer = new Konva.Layer();
 		this.stage.add(this.layer as any);
+
+		// 创建画笔 Layer（在图片图层之上）
+		this.brushLayer = new Konva.Layer();
+		this.stage.add(this.brushLayer as any);
 
 		// 创建 Transformer
 		this.transformer = new Konva.Transformer({
@@ -464,12 +476,144 @@ export class ImageEditor {
 			this.transformer.nodes([]);
 		}
 		this.layer?.draw();
+		// 清除画笔痕迹
+		this.clearBrush();
+	}
+
+	/**
+	 * 开启画笔模式
+	 */
+	public enableBrush(color: string = '#000000', size: number = 10): void {
+		if (!this.stage || !this.brushLayer) return;
+		
+		this.brushColor = color;
+		this.brushSize = size;
+		this.isDrawing = false;
+		
+		// 设置鼠标样式为画笔
+		if (this.stage.content) {
+			(this.stage.content as HTMLElement).style.cursor = 'crosshair';
+		}
+		
+		// 禁用图片拖拽，避免干扰画笔绘制
+		if (this.imageNode) {
+			this.imageNode.draggable(false);
+		}
+		
+		// 隐藏变换器
+		if (this.transformer) {
+			this.transformer.nodes([]);
+			this.layer?.draw();
+		}
+		
+		// 绑定画笔事件
+		this.stage.on('mousedown touchstart', this.handleBrushStart);
+		this.stage.on('mousemove touchmove', this.handleBrushMove);
+		this.stage.on('mouseup touchend mouseleave', this.handleBrushEnd);
+	}
+
+	/**
+	 * 关闭画笔模式
+	 */
+	public disableBrush(): void {
+		if (!this.stage) return;
+		
+		// 恢复鼠标样式
+		if (this.stage.content) {
+			(this.stage.content as HTMLElement).style.cursor = 'default';
+		}
+		
+		// 恢复图片拖拽
+		if (this.imageNode) {
+			this.imageNode.draggable(true);
+		}
+		
+		// 取消绑定画笔事件
+		this.stage.off('mousedown touchstart', this.handleBrushStart);
+		this.stage.off('mousemove touchmove', this.handleBrushMove);
+		this.stage.off('mouseup touchend mouseleave', this.handleBrushEnd);
+		
+		// 结束当前绘制
+		if (this.isDrawing) {
+			this.handleBrushEnd();
+		}
+	}
+
+	/**
+	 * 清除所有画笔痕迹
+	 */
+	public clearBrush(): void {
+		if (this.brushLayer) {
+			this.brushLayer.destroyChildren();
+			this.brushLayer.draw();
+		}
+		this.brushPoints = [];
+		this.brushLine = null;
+	}
+
+	/**
+	 * 画笔开始绘制
+	 */
+	private handleBrushStart = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+		if (!this.brushLayer) return;
+		
+		e.evt.preventDefault();
+		this.isDrawing = true;
+		
+		// 获取鼠标位置（相对于 stage）
+		const pos = this.stage!.getPointerPosition();
+		if (!pos) return;
+		
+		// 开始新的线条
+		this.brushPoints = [pos.x, pos.y];
+		
+		this.brushLine = new Konva.Line({
+			points: this.brushPoints,
+			stroke: this.brushColor,
+			strokeWidth: this.brushSize,
+			lineCap: 'round',
+			lineJoin: 'round',
+			globalCompositeOperation: 'source-over',
+		});
+		
+		this.brushLayer.add(this.brushLine);
+	}
+
+	/**
+	 * 画笔移动绘制
+	 */
+	private handleBrushMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
+		if (!this.isDrawing || !this.brushLine || !this.brushLayer) return;
+		
+		e.evt.preventDefault();
+		
+		// 获取鼠标位置
+		const pos = this.stage!.getPointerPosition();
+		if (!pos) return;
+		
+		// 添加新的点
+		this.brushPoints.push(pos.x, pos.y);
+		
+		// 更新线条
+		this.brushLine.points(this.brushPoints);
+		this.brushLayer.batchDraw();
+	}
+
+	/**
+	 * 画笔结束绘制
+	 */
+	private handleBrushEnd = (): void => {
+		this.isDrawing = false;
+		this.brushLine = null;
 	}
 
 	/**
 	 * 销毁编辑器，清理所有资源
 	 */
 	public destroy(): void {
+		// 先关闭画笔模式
+		this.disableBrush();
+		
 		if (this.imageNode) {
 			this.imageNode.destroy();
 			this.imageNode = null;
@@ -477,6 +621,10 @@ export class ImageEditor {
 		if (this.transformer) {
 			this.transformer.destroy();
 			this.transformer = null;
+		}
+		if (this.brushLayer) {
+			this.brushLayer.destroy();
+			this.brushLayer = null;
 		}
 		if (this.layer) {
 			this.layer.destroy();
