@@ -133,6 +133,8 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 
 // 清除本地缓存
 const clearStorage = () => {
+	// 画笔模式下不允许清除整体状态，避免误操作
+	if (isBrushMode.value) return;
 	try {
 		localStorage.removeItem(STORAGE_KEY);
 		imageUrl.value = "";
@@ -175,6 +177,8 @@ const debouncedSaveState = debounce(saveStateToStorage, 500);
 
 // 处理对比度变化
 const handleContrastChange = (value: number) => {
+	// 画笔模式下不允许调整滤镜
+	if (isBrushMode.value) return;
 	contrast.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('contrast', value);
@@ -184,11 +188,13 @@ const handleContrastChange = (value: number) => {
 
 // 重置单项：对比度
 const resetContrast = () => {
+	if (isBrushMode.value) return;
 	handleContrastChange(0);
 };
 
 // 处理色温变化
 const handleTemperatureChange = (value: number) => {
+	if (isBrushMode.value) return;
 	temperature.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('temperature', value);
@@ -198,11 +204,13 @@ const handleTemperatureChange = (value: number) => {
 
 // 重置单项：色温
 const resetTemperature = () => {
+	if (isBrushMode.value) return;
 	handleTemperatureChange(0);
 };
 
 // 处理饱和度变化
 const handleSaturationChange = (value: number) => {
+	if (isBrushMode.value) return;
 	saturation.value = value;
 	throttledUpdateFilter('saturation', value);
 	debouncedSaveState();
@@ -210,11 +218,13 @@ const handleSaturationChange = (value: number) => {
 
 // 重置单项：饱和度
 const resetSaturation = () => {
+	if (isBrushMode.value) return;
 	handleSaturationChange(0);
 };
 
 // 处理增强变化
 const handleEnhanceChange = (value: number) => {
+	if (isBrushMode.value) return;
 	enhance.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('enhance', value);
@@ -224,11 +234,13 @@ const handleEnhanceChange = (value: number) => {
 
 // 重置单项：增强
 const resetEnhance = () => {
+	if (isBrushMode.value) return;
 	handleEnhanceChange(0);
 };
 
 // 处理模糊变化
 const handleBlurChange = (value: number) => {
+	if (isBrushMode.value) return;
 	blur.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('blur', value);
@@ -238,6 +250,7 @@ const handleBlurChange = (value: number) => {
 
 // 重置单项：模糊
 const resetBlur = () => {
+	if (isBrushMode.value) return;
 	handleBlurChange(0);
 };
 
@@ -416,12 +429,13 @@ const max = 100;
 				<div class="tool-panel">
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
-					<div class="tool-item">
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
 						<label class="tool-label" @dblclick="resetContrast">
 							<span>对比度</span>
 							<span class="tool-value">{{ contrast }}</span>
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
+							:disabled="isBrushMode"
 							@input="handleContrastChange(contrast)" @change="saveStateToStorage" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>{{ min }}</span>
@@ -430,12 +444,13 @@ const max = 100;
 						</div>
 					</div>
 					<!-- 色温调节 -->
-					<div class="tool-item">
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
 						<label class="tool-label" @dblclick="resetTemperature">
 							<span>色温</span>
 							<span class="tool-value">{{ temperature }}</span>
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
+							:disabled="isBrushMode"
 							@input="handleTemperatureChange(temperature)" @change="saveStateToStorage"
 							class="tool-slider" />
 						<div class="tool-range-labels">
@@ -445,12 +460,13 @@ const max = 100;
 						</div>
 					</div>
 					<!-- 饱和度调节 -->
-					<div class="tool-item">
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
 						<label class="tool-label" @dblclick="resetSaturation">
 							<span>饱和度</span>
 							<span class="tool-value">{{ saturation }}</span>
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="saturation"
+							:disabled="isBrushMode"
 							@input="handleSaturationChange(saturation)" @change="saveStateToStorage"
 							class="tool-slider" />
 						<div class="tool-range-labels">
@@ -460,12 +476,13 @@ const max = 100;
 						</div>
 					</div>
 					<!-- 模糊调节 -->
-					<div class="tool-item">
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
 						<label class="tool-label" @dblclick="resetBlur">
 							<span>模糊</span>
 							<span class="tool-value">{{ blur }}</span>
 						</label>
 						<input type="range" min="0" max="100" step="1" v-model.number="blur"
+							:disabled="isBrushMode"
 							@input="handleBlurChange(blur)" @change="saveStateToStorage" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>0</span>
@@ -474,12 +491,13 @@ const max = 100;
 						</div>
 					</div>
 					<!-- 增强调节 -->
-					<div class="tool-item">
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
 						<label class="tool-label" @dblclick="resetEnhance">
 							<span>滤镜效果增强</span>
 							<span class="tool-value">{{ enhance }}</span>
 						</label>
 						<input type="range" min="0" max="100" step="1" v-model.number="enhance"
+							:disabled="isBrushMode"
 							@input="handleEnhanceChange(enhance)" @change="saveStateToStorage" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>0</span>
@@ -488,11 +506,11 @@ const max = 100;
 						</div>
 					</div>
 					<!-- 重置按钮 -->
-					<button @click="handleReset" class="reset-button">
+					<button @click="handleReset" :disabled="isBrushMode" class="reset-button">
 						重置调整
 					</button>
 					<!-- 清除缓存按钮 -->
-					<button @click="clearStorage" class="clear-button">
+					<button @click="clearStorage" :disabled="isBrushMode" class="clear-button">
 						清除缓存
 					</button>
 				</div>
@@ -528,6 +546,7 @@ const max = 100;
 					<button v-if="isBrushMode" @click="handleExportBrush" class="export-button">
 						导出画笔图层
 					</button>
+					
 				</div>
 			</div>
 		</div>
@@ -658,6 +677,12 @@ const max = 100;
 	margin-bottom: 20px;
 }
 
+/* 画笔模式下禁用滤镜调节的视觉状态 */
+.tool-item-disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
 .tool-label {
 	display: flex;
 	justify-content: space-between;
@@ -744,10 +769,18 @@ const max = 100;
 	transition: all 0.3s ease;
 }
 
-.reset-button:hover {
+.reset-button:hover:not(:disabled) {
 	background: #eeeeee;
 	border-color: #d0d0d0;
 	color: #333;
+}
+
+.reset-button:disabled {
+	background: #e0e0e0;
+	color: #999;
+	border-color: #d0d0d0;
+	cursor: not-allowed;
+	opacity: 0.6;
 }
 
 .clear-button {
@@ -764,10 +797,17 @@ const max = 100;
 	margin-top: 12px;
 }
 
-.clear-button:hover {
+.clear-button:hover:not(:disabled) {
 	background: #ff5252;
 	transform: translateY(-1px);
 	box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+}
+
+.clear-button:disabled {
+	background: #cccccc;
+	color: #999;
+	cursor: not-allowed;
+	opacity: 0.6;
 }
 
 .brush-button {
