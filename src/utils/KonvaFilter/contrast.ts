@@ -1,47 +1,73 @@
 import Konva from "konva";
 
+// 简单缓存最近一次对比度对应的查找表，避免重复计算
+let lastContrastValue: number | null = null;
+let lastLUT: Uint8ClampedArray | null = null;
+
 /**
- * 增强对比度自定义滤镜
- * 使用更强的算法，使对比度调整效果更明显
- * @param imageData 图像数据
+ * 根据对比度值生成查找表（0~255 映射）
+ * 使用非线性映射增强高对比度时的效果，但只计算 256 次
  */
-export function Contrast(this: any, imageData: ImageData) {
-	const data = imageData.data;
-	const len = data.length;
+function getContrastLUT(contrastValue: number): Uint8ClampedArray {
+	// 缓存命中，直接复用
+	if (lastLUT && lastContrastValue === contrastValue) {
+		return lastLUT;
+	}
 
-	// 从节点获取对比度值（-100 到 100）
-	const contrastValue = (this.contrast && typeof this.contrast === 'function') 
-		? this.contrast() 
-		: (this.contrast || 0);
+	const lut = new Uint8ClampedArray(256);
 
-	// 将 -100 到 100 转换为对比度系数
-	// 使用非线性映射，使效果更明显
-	// 正值增强对比度，负值降低对比度
-	const normalizedValue = contrastValue / 100; // -1 到 1
-	
+	// 将 -100 到 100 转换为 -1 到 1
+	const normalizedValue = contrastValue / 100;
+
 	// 使用更强的映射曲线
-	// 对于正值（增强对比度），使用指数函数放大效果
-	// 对于负值（降低对比度），使用平方根函数
 	let contrastFactor: number;
 	if (normalizedValue >= 0) {
 		// 增强对比度：使用指数函数，范围 1.0 到 3.0
 		contrastFactor = 1.0 + Math.pow(normalizedValue, 0.7) * 2.0;
 	} else {
 		// 降低对比度：使用平方根函数，范围 0.3 到 1.0
-		const absValue = Math.abs(normalizedValue);
+		const absValue = -normalizedValue;
 		contrastFactor = 0.3 + (1.0 - 0.3) * (1.0 - Math.pow(absValue, 0.5));
 	}
 
-	// 应用对比度调整
-	// 标准对比度公式：newValue = (oldValue - 128) * factor + 128
-	// 使用 128 作为中点（50% 灰度）
 	const midpoint = 128;
 
+	for (let i = 0; i < 256; i++) {
+		const v = (i - midpoint) * contrastFactor + midpoint;
+		// 手写 clamp，避免多次 Math.min/Math.max
+		lut[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+	}
+
+	lastContrastValue = contrastValue;
+	lastLUT = lut;
+	return lut;
+}
+
+/**
+ * 增强对比度自定义滤镜（优化版）
+ * - 使用查找表（LUT）减少每个像素的运算
+ * - 避免在高像素图片上做大量 Math.pow / clamp 运算
+ */
+export function Contrast(this: any, imageData: ImageData) {
+	const data = imageData.data;
+	const len = data.length;
+
+	// 从节点获取对比度值（-100 到 100）
+	const contrastValue =
+		this.contrast && typeof this.contrast === "function"
+			? this.contrast()
+			: this.contrast || 0;
+
+	// 对比度为 0 时直接返回，避免不必要的遍历
+	if (!contrastValue) return;
+
+	const lut = getContrastLUT(contrastValue);
+
+	// 使用查找表对 RGB 通道做 O(1) 映射
 	for (let i = 0; i < len; i += 4) {
-		// 对 RGB 通道分别应用对比度
-		data[i] = Math.min(255, Math.max(0, (data[i] - midpoint) * contrastFactor + midpoint));     // R
-		data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - midpoint) * contrastFactor + midpoint)); // G
-		data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - midpoint) * contrastFactor + midpoint)); // B
+		data[i] = lut[data[i]]; // R
+		data[i + 1] = lut[data[i + 1]]; // G
+		data[i + 2] = lut[data[i + 2]]; // B
 		// data[i + 3] 是 alpha，保持不变
 	}
 }

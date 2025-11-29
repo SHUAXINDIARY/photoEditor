@@ -155,13 +155,14 @@ export class ImageFilterManager {
                 imageNode.blurRadius(0);
             }
 
-            // 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
-            imageNode.clearCache();
-            imageNode.cache();
+            // 说明：
+            // - 图片在加载时已经调用过 imageNode.cache()
+            // - Konva 会在已有缓存的基础上根据 filters 和参数实时重算像素
+            // - 这里不再反复 clearCache/cache，避免在高像素图片上频繁重建缓存导致卡顿
 
-            // 重绘画布
+            // 重绘画布（使用 batchDraw 合并多次重绘，提升拖拽时流畅度）
             if (this.layer) {
-                this.layer.draw();
+                this.layer.batchDraw();
             }
         } finally {
             this.isUpdating = false;

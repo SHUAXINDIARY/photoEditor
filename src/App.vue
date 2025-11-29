@@ -24,8 +24,13 @@ const brushSize = ref<number>(10); // 画笔粗细：1 到 50
 // localStorage 键名
 const STORAGE_KEY = "photoEditor_state";
 
+// localStorage 可用性标记，避免反复触发配额错误
+let storageDisabled = false;
+
 // 保存状态到本地缓存
 const saveStateToStorage = () => {
+	// localStorage 已经被判定为不可用（例如配额已满），直接跳过
+	if (storageDisabled) return;
 	if (!imageUrl.value || !imageEditor.value) return;
 
 	const imageState = imageEditor.value.getImageState();
@@ -41,9 +46,23 @@ const saveStateToStorage = () => {
 	};
 
 	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-	} catch (error) {
-		console.error("保存状态失败:", error);
+		const serialized = JSON.stringify(state);
+
+		// 如果数据过大（通常是图片 Base64 太长），避免触发配额错误
+		// 这里只是一个经验阈值，大约 ~2MB 字符
+		if (serialized.length > 2_000_000) {
+			console.warn(
+				"[photoEditor] 状态过大，已停止写入 localStorage（不再持久化图片，以避免配额错误）。"
+			);
+			storageDisabled = true;
+			return;
+		}
+
+		localStorage.setItem(STORAGE_KEY, serialized);
+	} catch (error: any) {
+		console.warn("[photoEditor] 保存状态失败，已禁用后续 localStorage 写入：", error);
+		// 防止后续频繁报错
+		storageDisabled = true;
 	}
 };
 
