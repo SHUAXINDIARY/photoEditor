@@ -312,6 +312,29 @@ const handleExportBrush = async () => {
 	}
 };
 
+// 导出编辑后的完整图片（包含滤镜效果和画笔）
+const handleExportEditedImage = async () => {
+	if (!imageEditor.value) {
+		alert("请先上传图片");
+		return;
+	}
+
+	try {
+		const dataURL = await imageEditor.value.exportEditedImage('image/png', 0.95);
+
+		// 创建下载链接
+		const link = document.createElement('a');
+		link.download = `edited-image-${Date.now()}.png`;
+		link.href = dataURL;
+		link.click();
+
+		alert("导出成功！");
+	} catch (error: any) {
+		console.error("导出失败:", error);
+		alert(error.message || "导出失败，请重试");
+	}
+};
+
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
@@ -512,6 +535,10 @@ const max = 100;
 					<!-- 清除缓存按钮 -->
 					<button @click="clearStorage" :disabled="isBrushMode" class="clear-button">
 						清除缓存
+					</button>
+					<!-- 导出编辑后图片按钮 -->
+					<button @click="handleExportEditedImage" :disabled="!imageUrl" class="export-edited-button">
+						导出编辑后图片
 					</button>
 				</div>
 			</div>
@@ -804,6 +831,33 @@ const max = 100;
 }
 
 .clear-button:disabled {
+	background: #cccccc;
+	color: #999;
+	cursor: not-allowed;
+	opacity: 0.6;
+}
+
+.export-edited-button {
+	width: 100%;
+	padding: 12px 24px;
+	background: #667eea;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 0.95rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	margin-top: 12px;
+}
+
+.export-edited-button:hover:not(:disabled) {
+	background: #5568d3;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.export-edited-button:disabled {
 	background: #cccccc;
 	color: #999;
 	cursor: not-allowed;

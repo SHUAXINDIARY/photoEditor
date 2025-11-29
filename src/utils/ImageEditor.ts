@@ -502,6 +502,168 @@ export class ImageEditor {
 	}
 
 	/**
+	 * 导出编辑后的完整图片（包含滤镜效果和画笔图层）
+	 * 返回合并后的图片，尺寸与原始图片一致
+	 */
+	public exportEditedImage(mimeType: string = 'image/png', quality?: number): Promise<string> {
+		return new Promise((resolve, reject) => {
+			if (!this.imageNode || !this.originalImageWidth || !this.originalImageHeight) {
+				reject(new Error("图片未加载"));
+				return;
+			}
+
+			try {
+				// 创建临时 canvas，尺寸为原始图片尺寸
+				const tempCanvas = document.createElement('canvas');
+				tempCanvas.width = this.originalImageWidth;
+				tempCanvas.height = this.originalImageHeight;
+				const ctx = tempCanvas.getContext('2d');
+				if (!ctx) {
+					reject(new Error("无法创建 canvas 上下文"));
+					return;
+				}
+
+				// 获取应用了滤镜的图片
+				// 使用 Konva 的 toDataURL 方法获取当前图片节点的数据
+				// 需要创建一个临时的 stage 来导出
+				const tempStage = new Konva.Stage({
+					container: document.createElement('div'),
+					width: this.originalImageWidth,
+					height: this.originalImageHeight,
+				});
+
+				const tempLayer = new Konva.Layer();
+				tempStage.add(tempLayer);
+
+				// 创建新的图片节点，使用原始尺寸
+				const originalImage = (this.imageNode as any).image();
+				if (!originalImage) {
+					reject(new Error("无法获取原始图片"));
+					return;
+				}
+
+				// 复制当前图片节点，但使用原始尺寸
+				const tempImageNode = new Konva.Image({
+					image: originalImage,
+					x: 0,
+					y: 0,
+					width: this.originalImageWidth,
+					height: this.originalImageHeight,
+				});
+
+				// 复制所有滤镜和参数
+				const filters = this.imageNode.filters();
+				tempImageNode.filters(filters);
+				
+				// 复制滤镜参数
+				const imageNodeAny = this.imageNode as any;
+				if (typeof imageNodeAny.contrast === 'function') {
+					(tempImageNode as any).contrast(imageNodeAny.contrast());
+				} else if (imageNodeAny.contrast !== undefined) {
+					(tempImageNode as any).contrast = imageNodeAny.contrast;
+				}
+				if (typeof imageNodeAny.temperature === 'function') {
+					(tempImageNode as any).temperature(imageNodeAny.temperature());
+				} else if (imageNodeAny.temperature !== undefined) {
+					(tempImageNode as any).temperature = imageNodeAny.temperature;
+				}
+				if (typeof this.imageNode.enhance === 'function') {
+					tempImageNode.enhance(this.imageNode.enhance());
+				}
+				if (typeof this.imageNode.saturation === 'function') {
+					tempImageNode.saturation(this.imageNode.saturation());
+				}
+				if (typeof this.imageNode.blurRadius === 'function') {
+					tempImageNode.blurRadius(this.imageNode.blurRadius());
+				}
+
+				// 缓存并添加到图层
+				tempImageNode.cache();
+				tempLayer.add(tempImageNode);
+				tempLayer.draw();
+
+				// 获取应用了滤镜的图片数据
+				const imageDataURL = tempStage.toDataURL({ 
+					pixelRatio: 1,
+					mimeType: mimeType,
+					quality: quality 
+				});
+
+				// 加载图片到 canvas
+				const img = new Image();
+				img.onload = () => {
+					// 绘制应用了滤镜的图片
+					ctx.drawImage(img, 0, 0, this.originalImageWidth, this.originalImageHeight);
+
+					// 如果有画笔图层，叠加绘制画笔
+					if (this.brushLayer) {
+						const brushChildren = this.brushLayer.getChildren();
+						if (brushChildren.length > 0) {
+							ctx.save();
+
+							brushChildren.forEach((child) => {
+								if (child instanceof Konva.Line) {
+									const originalPoints = child.points();
+									
+									if (originalPoints.length < 4) return;
+
+									// 设置画笔样式
+									ctx.strokeStyle = child.stroke();
+									ctx.lineWidth = child.strokeWidth() / this.imageScale;
+									ctx.lineCap = child.lineCap() as CanvasLineCap;
+									ctx.lineJoin = child.lineJoin() as CanvasLineJoin;
+
+									// 开始路径
+									ctx.beginPath();
+
+									// 转换每个点的坐标并绘制
+									for (let i = 0; i < originalPoints.length; i += 2) {
+										const stageX = originalPoints[i];
+										const stageY = originalPoints[i + 1];
+										
+										const relativeX = stageX - this.imageOffsetX;
+										const relativeY = stageY - this.imageOffsetY;
+										
+										const imageX = relativeX / this.imageScale;
+										const imageY = relativeY / this.imageScale;
+										
+										if (i === 0) {
+											ctx.moveTo(imageX, imageY);
+										} else {
+											ctx.lineTo(imageX, imageY);
+										}
+									}
+
+									ctx.stroke();
+								}
+							});
+
+							ctx.restore();
+						}
+					}
+
+					// 导出为图片
+					const dataURL = tempCanvas.toDataURL(mimeType, quality);
+					
+					// 清理临时资源
+					tempStage.destroy();
+					
+					resolve(dataURL);
+				};
+
+				img.onerror = () => {
+					tempStage.destroy();
+					reject(new Error("无法加载滤镜后的图片"));
+				};
+
+				img.src = imageDataURL;
+			} catch (error) {
+				reject(error);
+			}
+		});
+	}
+
+	/**
 	 * 导出画笔图层为图片
 	 * 返回黑色背景、白色画笔的图片，尺寸与原始图片一致
 	 */
