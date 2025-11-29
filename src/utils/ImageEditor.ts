@@ -1,5 +1,6 @@
 import Konva from "konva";
 import { registerCustomFilters } from "./KonvaFilter";
+import { ImageFilterManager } from "./ImageFilterManager";
 
 // 注册自定义滤镜（只注册一次）
 let filtersRegistered = false;
@@ -38,9 +39,13 @@ export class ImageEditor {
 	private imageOffsetX: number = 0; // 图片在画布上的 X 偏移
 	private imageOffsetY: number = 0; // 图片在画布上的 Y 偏移
 
+	// 图片效果管理模块（与基础画布能力解耦）
+	private filterManager: ImageFilterManager;
+
 	constructor(container: HTMLElement, config: ImageEditorConfig) {
 		this.container = container;
 		this.config = config;
+		this.filterManager = new ImageFilterManager();
 		this.initStage();
 	}
 
@@ -163,6 +168,9 @@ export class ImageEditor {
 
 					// 保存引用
 					this.imageNode = konvaImage;
+
+					// 告知滤镜模块当前图片与图层
+					this.filterManager.setImageContext(this.imageNode, this.layer!);
 
 					// 附加变换器
 					this.transformer!.nodes([konvaImage]);
@@ -288,154 +296,12 @@ export class ImageEditor {
 		return this.stage.toDataURL({ mimeType, quality });
 	}
 
-	private currentContrast: number = 0;
-	private currentTemperature: number = 0;
-	private currentEnhance: number = 0;
-	private currentSaturation: number = 0;
-	private currentBlur: number = 0;
-
-	private rafId: number | null = null;
-	private isUpdating: boolean = false;
-
-	/**
-	 * 应用所有滤镜（使用 requestAnimationFrame 优化性能）
-	 */
-	private applyFilters(): void {
-		if (!this.imageNode || this.isUpdating) return;
-
-		// 取消之前的动画帧请求
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-		}
-
-		// 使用 requestAnimationFrame 优化渲染
-		this.rafId = requestAnimationFrame(() => {
-			this.rafId = null;
-			this._applyFiltersSync();
-		});
-	}
-
-	/**
-	 * 同步应用滤镜
-	 */
-	private _applyFiltersSync(): void {
-		if (!this.imageNode) return;
-
-		this.isUpdating = true;
-
-		try {
-			const filters: any[] = [];
-			const hasContrast = this.currentContrast !== 0;
-			const hasTemperature = this.currentTemperature !== 0;
-			const hasSaturation = this.currentSaturation !== 0;
-			const hasBlur = this.currentBlur !== 0;
-
-			// 应用对比度滤镜（使用自定义滤镜，效果更强）
-			if (hasContrast) {
-				filters.push((Konva.Filters as any).Contrast);
-			}
-
-			// 应用色温自定义滤镜
-			if (hasTemperature) {
-				filters.push((Konva.Filters as any).Temperature);
-			}
-
-			// 应用增强滤镜（始终应用，通过数值控制强度）
-			filters.push(Konva.Filters.Enhance);
-
-			// 应用饱和度滤镜（使用 HSL 滤镜）
-			if (hasSaturation) {
-				filters.push(Konva.Filters.HSL);
-			}
-
-			// 应用模糊滤镜
-			if (hasBlur) {
-				filters.push(Konva.Filters.Blur);
-			}
-
-			// 先设置 filters 数组
-			this.imageNode.filters(filters);
-
-			// 然后设置对比度参数（使用自定义滤镜，直接使用 -100 到 100 的值）
-			if (hasContrast) {
-				// 自定义对比度滤镜直接接受 -100 到 100 的值
-				if (typeof (this.imageNode as any).contrast === 'function') {
-					(this.imageNode as any).contrast(this.currentContrast);
-				} else {
-					(this.imageNode as any).contrast = this.currentContrast;
-				}
-			} else {
-				if (typeof (this.imageNode as any).contrast === 'function') {
-					(this.imageNode as any).contrast(0);
-				} else {
-					(this.imageNode as any).contrast = 0;
-				}
-			}
-
-			// 设置色温参数（使用自定义滤镜）
-			if (hasTemperature) {
-				// 直接设置色温值，自定义滤镜会处理
-				if (typeof (this.imageNode as any).temperature === 'function') {
-					(this.imageNode as any).temperature(this.currentTemperature);
-				} else {
-					(this.imageNode as any).temperature = this.currentTemperature;
-				}
-			} else {
-				if (typeof (this.imageNode as any).temperature === 'function') {
-					(this.imageNode as any).temperature(0);
-				} else {
-					(this.imageNode as any).temperature = 0;
-				}
-			}
-
-			// 设置增强参数（范围 0 到 2）
-			// Konva Enhance 滤镜：0 为无增强，1 为轻微增强，>1 为强增强
-			// 将 0 到 100 映射到 0 到 2
-			const enhanceValue = Math.min(2, Math.max(0, this.currentEnhance / 50));
-			this.imageNode.enhance(enhanceValue);
-
-			// 设置饱和度参数（使用 HSL 滤镜）
-			// HSL 滤镜的饱和度范围是 -1 到 1
-			if (hasSaturation) {
-				const saturationValue = Math.max(-1, Math.min(1, this.currentSaturation / 100));
-				this.imageNode.saturation(saturationValue);
-				// HSL 滤镜需要设置其他参数为 0
-				this.imageNode.hue(0);
-				this.imageNode.luminance(0);
-			} else {
-				this.imageNode.saturation(0);
-				this.imageNode.hue(0);
-				this.imageNode.luminance(0);
-			}
-
-			// 设置模糊参数（范围 0 到 20）
-			if (hasBlur) {
-				// 将 0 到 100 转换为 0 到 20
-				this.imageNode.blurRadius(this.currentBlur * 0.2);
-			} else {
-				this.imageNode.blurRadius(0);
-			}
-
-			// 清除缓存并重新缓存（重要：应用滤镜后必须重新缓存）
-			this.imageNode.clearCache();
-			this.imageNode.cache();
-			// 重绘画布
-			if (this.layer) {
-				this.layer.draw();
-			}
-		} finally {
-			this.isUpdating = false;
-		}
-	}
-
 	/**
 	 * 设置对比度
 	 * @param contrast 对比度值，范围 -100 到 100，0 为原始值
 	 */
 	public setContrast(contrast: number): void {
-		if (!this.imageNode) return;
-		this.currentContrast = contrast;
-		this.applyFilters();
+		this.filterManager.setContrast(contrast);
 	}
 
 	/**
@@ -444,9 +310,7 @@ export class ImageEditor {
 	 *                    -100 为冷色调（蓝色），100 为暖色调（橙红色）
 	 */
 	public setTemperature(temperature: number): void {
-		if (!this.imageNode) return;
-		this.currentTemperature = temperature;
-		this.applyFilters();
+		this.filterManager.setTemperature(temperature);
 	}
 
 	/**
@@ -454,9 +318,7 @@ export class ImageEditor {
 	 * @param enhance 增强值，范围 0 到 100（内部映射到 0~2）
 	 */
 	public setEnhance(enhance: number): void {
-		if (!this.imageNode) return;
-		this.currentEnhance = enhance;
-		this.applyFilters();
+		this.filterManager.setEnhance(enhance);
 	}
 
 	/**
@@ -464,9 +326,7 @@ export class ImageEditor {
 	 * @param saturation 饱和度值，范围 -100 到 100，0 为原始值
 	 */
 	public setSaturation(saturation: number): void {
-		if (!this.imageNode) return;
-		this.currentSaturation = saturation;
-		this.applyFilters();
+		this.filterManager.setSaturation(saturation);
 	}
 
 	/**
@@ -474,22 +334,14 @@ export class ImageEditor {
 	 * @param blur 模糊值，范围 0 到 100，0 为原始值
 	 */
 	public setBlur(blur: number): void {
-		if (!this.imageNode) return;
-		this.currentBlur = blur;
-		this.applyFilters();
+		this.filterManager.setBlur(blur);
 	}
 
 	/**
 	 * 重置所有滤镜效果
 	 */
 	public resetFilters(): void {
-		if (!this.imageNode) return;
-		this.currentContrast = 0;
-		this.currentTemperature = 0;
-		this.currentEnhance = 0;
-		this.currentSaturation = 0;
-		this.currentBlur = 0;
-		this.applyFilters();
+		this.filterManager.reset();
 	}
 
 	/**
@@ -500,6 +352,8 @@ export class ImageEditor {
 			this.imageNode.destroy();
 			this.imageNode = null;
 		}
+		// 同步清空滤镜上下文
+		this.filterManager.setImageContext(null, this.layer);
 		if (this.transformer) {
 			this.transformer.nodes([]);
 		}
