@@ -163,6 +163,11 @@ const handleContrastChange = (value: number) => {
 	debouncedSaveState();
 };
 
+// 重置单项：对比度
+const resetContrast = () => {
+	handleContrastChange(0);
+};
+
 // 处理色温变化
 const handleTemperatureChange = (value: number) => {
 	temperature.value = value;
@@ -172,11 +177,21 @@ const handleTemperatureChange = (value: number) => {
 	debouncedSaveState();
 };
 
+// 重置单项：色温
+const resetTemperature = () => {
+	handleTemperatureChange(0);
+};
+
 // 处理饱和度变化
 const handleSaturationChange = (value: number) => {
 	saturation.value = value;
 	throttledUpdateFilter('saturation', value);
 	debouncedSaveState();
+};
+
+// 重置单项：饱和度
+const resetSaturation = () => {
+	handleSaturationChange(0);
 };
 
 // 处理增强变化
@@ -188,6 +203,11 @@ const handleEnhanceChange = (value: number) => {
 	debouncedSaveState();
 };
 
+// 重置单项：增强
+const resetEnhance = () => {
+	handleEnhanceChange(0);
+};
+
 // 处理模糊变化
 const handleBlurChange = (value: number) => {
 	blur.value = value;
@@ -195,6 +215,11 @@ const handleBlurChange = (value: number) => {
 	throttledUpdateFilter('blur', value);
 	// 使用防抖保存，避免频繁操作
 	debouncedSaveState();
+};
+
+// 重置单项：模糊
+const resetBlur = () => {
+	handleBlurChange(0);
 };
 
 // 重置所有调整
@@ -373,7 +398,7 @@ const max = 100;
 					<h3 class="tool-panel-title">图片调整</h3>
 					<!-- 对比度调节 -->
 					<div class="tool-item">
-						<label class="tool-label">
+						<label class="tool-label" @dblclick="resetContrast">
 							<span>对比度</span>
 							<span class="tool-value">{{ contrast }}</span>
 						</label>
@@ -387,7 +412,7 @@ const max = 100;
 					</div>
 					<!-- 色温调节 -->
 					<div class="tool-item">
-						<label class="tool-label">
+						<label class="tool-label" @dblclick="resetTemperature">
 							<span>色温</span>
 							<span class="tool-value">{{ temperature }}</span>
 						</label>
@@ -402,7 +427,7 @@ const max = 100;
 					</div>
 					<!-- 饱和度调节 -->
 					<div class="tool-item">
-						<label class="tool-label">
+						<label class="tool-label" @dblclick="resetSaturation">
 							<span>饱和度</span>
 							<span class="tool-value">{{ saturation }}</span>
 						</label>
@@ -417,7 +442,7 @@ const max = 100;
 					</div>
 					<!-- 模糊调节 -->
 					<div class="tool-item">
-						<label class="tool-label">
+						<label class="tool-label" @dblclick="resetBlur">
 							<span>模糊</span>
 							<span class="tool-value">{{ blur }}</span>
 						</label>
@@ -431,7 +456,7 @@ const max = 100;
 					</div>
 					<!-- 增强调节 -->
 					<div class="tool-item">
-						<label class="tool-label">
+						<label class="tool-label" @dblclick="resetEnhance">
 							<span>滤镜效果增强</span>
 							<span class="tool-value">{{ enhance }}</span>
 						</label>
