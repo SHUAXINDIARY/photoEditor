@@ -1,6 +1,7 @@
 import { registerTemperatureFilter } from "./temperature";
 import { registerTintFilter } from "./tint";
 import { registerContrastFilter } from "./contrast";
+import { registerShadowFilter } from "./shadow";
 
 /**
  * 注册所有自定义滤镜
@@ -9,6 +10,7 @@ export function registerCustomFilters() {
 	registerTemperatureFilter();
 	registerTintFilter();
 	registerContrastFilter();
+	registerShadowFilter();
 }
 
 // 导出滤镜函数供外部使用

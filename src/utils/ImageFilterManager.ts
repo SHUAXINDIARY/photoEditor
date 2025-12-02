@@ -14,6 +14,7 @@ export class ImageFilterManager {
     private currentEnhance: number = 0;
     private currentSaturation: number = 0;
     private currentBlur: number = 0;
+    private currentShadow: number = 0; // 阴影强度 0-100
 
     private rafId: number | null = null;
     private isUpdating: boolean = false;
@@ -62,6 +63,7 @@ export class ImageFilterManager {
             const hasTemperature = this.currentTemperature !== 0;
             const hasSaturation = this.currentSaturation !== 0;
             const hasBlur = this.currentBlur !== 0;
+            const hasShadow = this.currentShadow !== 0;
 
             // 应用对比度滤镜（使用自定义滤镜，效果更强）
             if (hasContrast) {
@@ -84,6 +86,11 @@ export class ImageFilterManager {
             // 应用模糊滤镜
             if (hasBlur) {
                 filters.push(Konva.Filters.Blur);
+            }
+
+            // 应用阴影滤镜（内容阴影，不是投影）
+            if (hasShadow) {
+                filters.push((Konva.Filters as any).Shadow);
             }
 
             // 先设置 filters 数组
@@ -155,6 +162,23 @@ export class ImageFilterManager {
                 imageNode.blurRadius(0);
             }
 
+            // 设置阴影参数（内容阴影/高光调整）
+            if (hasShadow) {
+                // 阴影效果：-100 到 100
+                // 负值压暗阴影，正值提亮阴影
+                if (typeof (imageNode as any).shadow === "function") {
+                    (imageNode as any).shadow(this.currentShadow);
+                } else {
+                    (imageNode as any).shadow = this.currentShadow;
+                }
+            } else {
+                if (typeof (imageNode as any).shadow === "function") {
+                    (imageNode as any).shadow(0);
+                } else {
+                    (imageNode as any).shadow = 0;
+                }
+            }
+
             // 说明：
             // - 图片在加载时已经调用过 imageNode.cache()
             // - Konva 会在已有缓存的基础上根据 filters 和参数实时重算像素
@@ -201,6 +225,12 @@ export class ImageFilterManager {
         this.scheduleApplyFilters();
     }
 
+    /** 设置阴影：0 ~ 100，0 为无阴影 */
+    public setShadow(shadow: number): void {
+        this.currentShadow = shadow;
+        this.scheduleApplyFilters();
+    }
+
     /** 重置所有滤镜 */
     public reset(): void {
         this.currentContrast = 0;
@@ -208,6 +238,7 @@ export class ImageFilterManager {
         this.currentEnhance = 0;
         this.currentSaturation = 0;
         this.currentBlur = 0;
+        this.currentShadow = 0;
         this.scheduleApplyFilters();
     }
 }
