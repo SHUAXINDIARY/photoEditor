@@ -14,7 +14,8 @@ export class ImageFilterManager {
     private currentEnhance: number = 0;
     private currentSaturation: number = 0;
     private currentBlur: number = 0;
-    private currentShadow: number = 0; // 阴影强度 0-100
+    private currentShadow: number = 0; // 阴影强度 -100 到 100
+    private currentHighlight: number = 0; // 高光强度 -100 到 100
 
     private rafId: number | null = null;
     private isUpdating: boolean = false;
@@ -64,6 +65,7 @@ export class ImageFilterManager {
             const hasSaturation = this.currentSaturation !== 0;
             const hasBlur = this.currentBlur !== 0;
             const hasShadow = this.currentShadow !== 0;
+            const hasHighlight = this.currentHighlight !== 0;
 
             // 应用对比度滤镜（使用自定义滤镜，效果更强）
             if (hasContrast) {
@@ -91,6 +93,11 @@ export class ImageFilterManager {
             // 应用阴影滤镜（内容阴影，不是投影）
             if (hasShadow) {
                 filters.push((Konva.Filters as any).Shadow);
+            }
+
+            // 应用高光滤镜
+            if (hasHighlight) {
+                filters.push((Konva.Filters as any).Highlight);
             }
 
             // 先设置 filters 数组
@@ -162,7 +169,7 @@ export class ImageFilterManager {
                 imageNode.blurRadius(0);
             }
 
-            // 设置阴影参数（内容阴影/高光调整）
+            // 设置阴影参数（内容阴影调整）
             if (hasShadow) {
                 // 阴影效果：-100 到 100
                 // 负值压暗阴影，正值提亮阴影
@@ -176,6 +183,23 @@ export class ImageFilterManager {
                     (imageNode as any).shadow(0);
                 } else {
                     (imageNode as any).shadow = 0;
+                }
+            }
+
+            // 设置高光参数（内容高光调整）
+            if (hasHighlight) {
+                // 高光效果：-100 到 100
+                // 负值压暗高光（恢复过曝），正值提亮高光
+                if (typeof (imageNode as any).highlight === "function") {
+                    (imageNode as any).highlight(this.currentHighlight);
+                } else {
+                    (imageNode as any).highlight = this.currentHighlight;
+                }
+            } else {
+                if (typeof (imageNode as any).highlight === "function") {
+                    (imageNode as any).highlight(0);
+                } else {
+                    (imageNode as any).highlight = 0;
                 }
             }
 
@@ -225,9 +249,15 @@ export class ImageFilterManager {
         this.scheduleApplyFilters();
     }
 
-    /** 设置阴影：0 ~ 100，0 为无阴影 */
+    /** 设置阴影：-100 ~ 100，负值压暗，正值提亮 */
     public setShadow(shadow: number): void {
         this.currentShadow = shadow;
+        this.scheduleApplyFilters();
+    }
+
+    /** 设置高光：-100 ~ 100，负值压暗，正值提亮 */
+    public setHighlight(highlight: number): void {
+        this.currentHighlight = highlight;
         this.scheduleApplyFilters();
     }
 
@@ -239,6 +269,7 @@ export class ImageFilterManager {
         this.currentSaturation = 0;
         this.currentBlur = 0;
         this.currentShadow = 0;
+        this.currentHighlight = 0;
         this.scheduleApplyFilters();
     }
 }

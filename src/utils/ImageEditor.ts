@@ -355,10 +355,18 @@ export class ImageEditor {
 
 	/**
 	 * 设置阴影
-	 * @param shadow 阴影强度，范围 0 到 100，0 为无阴影
+	 * @param shadow 阴影强度，范围 -100 到 100
 	 */
 	public setShadow(shadow: number): void {
 		this.filterManager.setShadow(shadow);
+	}
+
+	/**
+	 * 设置高光
+	 * @param highlight 高光强度，范围 -100 到 100
+	 */
+	public setHighlight(highlight: number): void {
+		this.filterManager.setHighlight(highlight);
 	}
 
 	/**

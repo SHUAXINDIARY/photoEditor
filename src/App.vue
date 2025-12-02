@@ -17,6 +17,7 @@ const saturation = ref<number>(0); // 饱和度：-100 到 100
 const enhance = ref<number>(0); // 增强：0 到 100
 const blur = ref<number>(0); // 模糊：0 到 100
 const shadow = ref<number>(0); // 阴影：-100 到 100（调整图片暗部亮度）
+const highlight = ref<number>(0); // 高光：-100 到 100（调整图片亮部亮度）
 
 // 画笔状态
 const isBrushMode = ref<boolean>(false);
@@ -43,6 +44,7 @@ const saveStateToStorage = () => {
 		enhance: enhance.value,
 		blur: blur.value,
 		shadow: shadow.value,
+		highlight: highlight.value,
 		imageState: imageState,
 		timestamp: Date.now(),
 	};
@@ -117,6 +119,10 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 				shadow.value = state.shadow;
 				imageEditor.value.setShadow(state.shadow);
 			}
+			if (typeof state.highlight === "number") {
+				highlight.value = state.highlight;
+				imageEditor.value.setHighlight(state.highlight);
+			}
 
 			// 恢复图片状态（位置、缩放）
 			if (state.imageState) {
@@ -163,7 +169,7 @@ const clearStorage = () => {
 };
 
 // 节流更新滤镜（每 50ms 最多更新一次）
-const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur' | 'shadow', value: number) => {
+const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur' | 'shadow' | 'highlight', value: number) => {
 	if (!imageEditor.value) return;
 	if (type === 'contrast') {
 		imageEditor.value.setContrast(value);
@@ -177,6 +183,8 @@ const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'satu
 		imageEditor.value.setBlur(value);
 	} else if (type === 'shadow') {
 		imageEditor.value.setShadow(value);
+	} else if (type === 'highlight') {
+		imageEditor.value.setHighlight(value);
 	}
 }, 50);
 
@@ -278,6 +286,22 @@ const resetShadow = () => {
 	handleShadowChange(0);
 };
 
+// 处理高光变化
+const handleHighlightChange = (value: number) => {
+	if (isBrushMode.value) return;
+	highlight.value = value;
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('highlight', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
+};
+
+// 重置单项：高光
+const resetHighlight = () => {
+	if (isBrushMode.value) return;
+	handleHighlightChange(0);
+};
+
 // 重置所有调整
 const handleReset = () => {
 	contrast.value = 0;
@@ -286,6 +310,7 @@ const handleReset = () => {
 	enhance.value = 0;
 	blur.value = 0;
 	shadow.value = 0;
+	highlight.value = 0;
 	if (imageEditor.value) {
 		imageEditor.value.resetFilters();
 	}
@@ -562,6 +587,21 @@ const max = 100;
 						<input type="range" min="-100" max="100" step="1" v-model.number="shadow"
 							:disabled="isBrushMode"
 							@input="handleShadowChange(shadow)" @change="saveStateToStorage" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>压暗</span>
+							<span>0</span>
+							<span>提亮</span>
+						</div>
+					</div>
+					<!-- 高光调节 -->
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
+						<label class="tool-label" @dblclick="resetHighlight">
+							<span>高光</span>
+							<span class="tool-value">{{ highlight }}</span>
+						</label>
+						<input type="range" min="-100" max="100" step="1" v-model.number="highlight"
+							:disabled="isBrushMode"
+							@input="handleHighlightChange(highlight)" @change="saveStateToStorage" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>压暗</span>
 							<span>0</span>
