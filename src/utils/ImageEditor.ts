@@ -18,7 +18,8 @@ export interface ImageEditorConfig {
 export class ImageEditor {
 	private stage: Konva.Stage | null = null;
 	private layer: Konva.Layer | null = null;
-	private brushLayer: Konva.Layer | null = null; // 画笔图层
+	private brushLayer: Konva.Layer | null = null; // 画笔图层（在 group 内部）
+	private imageGroup: Konva.Group | null = null; // 将图片和画笔捆绑在一起
 	private transformer: Konva.Transformer | null = null;
 	private imageNode: Konva.Image | null = null;
 	private container: HTMLElement | null = null;
@@ -69,13 +70,9 @@ export class ImageEditor {
 			height: this.config.height,
 		});
 
-		// 创建 Layer（用于图片和变换器）
+		// 创建主 Layer
 		this.layer = new Konva.Layer();
 		this.stage.add(this.layer as any);
-
-		// 创建画笔 Layer（在图片图层之上）
-		this.brushLayer = new Konva.Layer();
-		this.stage.add(this.brushLayer as any);
 
 		// 创建 Transformer
 		this.transformer = new Konva.Transformer({
@@ -97,10 +94,12 @@ export class ImageEditor {
 				return;
 			}
 
-			// 如果已有图片节点，先移除
-			if (this.imageNode) {
-				this.imageNode.destroy();
+			// 如果已有图片组，先移除
+			if (this.imageGroup) {
+				this.imageGroup.destroy();
+				this.imageGroup = null;
 				this.imageNode = null;
+				this.brushLayer = null;
 			}
 
 			const image = new Image();
@@ -127,53 +126,70 @@ export class ImageEditor {
 					this.imageOffsetX = x;
 					this.imageOffsetY = y;
 
-					// 创建 Konva 图片节点
-					const konvaImage = new Konva.Image({
-						image: image,
+					// 创建 Group 来包含图片和画笔
+					this.imageGroup = new Konva.Group({
 						x: x,
 						y: y,
+						draggable: true,
+					});
+
+					// 创建 Konva 图片节点（相对于 Group 的位置为 0,0）
+					const konvaImage = new Konva.Image({
+						image: image,
+						x: 0,
+						y: 0,
 						scaleX: scale,
 						scaleY: scale,
-						draggable: true,
+						draggable: false, // 图片本身不可拖拽，由 Group 控制
 					});
 
 					// 启用缓存以提高滤镜性能
 					konvaImage.cache();
 
-					// 添加点击事件
-					konvaImage.on("click", () => this.handleImageClick());
+					// 创建画笔层（Layer -> Group 改为直接在 Group 内）
+					// 注意：这里不再创建 Layer，而是直接用 Group 管理
+					this.brushLayer = new Konva.Layer(); // 保持引用方式，但实际画笔线条会添加到 imageGroup
+					
+					// 将图片添加到 Group
+					this.imageGroup.add(konvaImage as any);
+
+					// 添加 Group 点击事件
+					this.imageGroup.on("click", () => this.handleImageClick());
 
 					// 添加拖拽结束事件，用于保存状态
-					konvaImage.on("dragend", () => {
+					this.imageGroup.on("dragend", () => {
+						// 更新图片位置信息
+						this.imageOffsetX = this.imageGroup!.x();
+						this.imageOffsetY = this.imageGroup!.y();
 						this.onImageStateChange?.();
 					});
 
 					// 添加变换结束事件，用于保存状态
-					konvaImage.on("transformend", () => {
+					this.imageGroup.on("transformend", () => {
 						// 更新图片位置和缩放信息
-						this.imageOffsetX = konvaImage.x();
-						this.imageOffsetY = konvaImage.y();
-						this.imageScale = konvaImage.scaleX();
+						this.imageOffsetX = this.imageGroup!.x();
+						this.imageOffsetY = this.imageGroup!.y();
+						this.imageScale = this.imageGroup!.scaleX() * scale; // 组的缩放 * 图片初始缩放
 						this.onImageStateChange?.();
 					});
 					
 					// 添加拖拽事件，更新位置信息
-					konvaImage.on("dragmove", () => {
-						this.imageOffsetX = konvaImage.x();
-						this.imageOffsetY = konvaImage.y();
+					this.imageGroup.on("dragmove", () => {
+						this.imageOffsetX = this.imageGroup!.x();
+						this.imageOffsetY = this.imageGroup!.y();
 					});
 
-					// 添加到图层
-					this.layer!.add(konvaImage as any);
+					// 将 Group 添加到图层
+					this.layer!.add(this.imageGroup as any);
 
-					// 保存引用
+					// 保存图片节点引用
 					this.imageNode = konvaImage;
 
 					// 告知滤镜模块当前图片与图层
 					this.filterManager.setImageContext(this.imageNode, this.layer!);
 
-					// 附加变换器
-					this.transformer!.nodes([konvaImage]);
+					// 附加变换器到 Group
+					this.transformer!.nodes([this.imageGroup as any]);
 
 					// 重绘画布
 					this.layer!.draw();
@@ -196,8 +212,8 @@ export class ImageEditor {
 	 * 处理图片点击事件
 	 */
 	private handleImageClick(): void {
-		if (this.transformer && this.imageNode) {
-			this.transformer.nodes([this.imageNode]);
+		if (this.transformer && this.imageGroup) {
+			this.transformer.nodes([this.imageGroup as any]);
 			this.layer?.draw();
 		}
 	}
@@ -242,12 +258,12 @@ export class ImageEditor {
 		scaleX: number;
 		scaleY: number;
 	} | null {
-		if (!this.imageNode) return null;
+		if (!this.imageGroup) return null;
 		return {
-			x: this.imageNode.x(),
-			y: this.imageNode.y(),
-			scaleX: this.imageNode.scaleX(),
-			scaleY: this.imageNode.scaleY(),
+			x: this.imageGroup.x(),
+			y: this.imageGroup.y(),
+			scaleX: this.imageGroup.scaleX(),
+			scaleY: this.imageGroup.scaleY(),
 		};
 	}
 
@@ -260,11 +276,11 @@ export class ImageEditor {
 		scaleX: number;
 		scaleY: number;
 	}): void {
-		if (!this.imageNode) return;
-		this.imageNode.x(state.x);
-		this.imageNode.y(state.y);
-		this.imageNode.scaleX(state.scaleX);
-		this.imageNode.scaleY(state.scaleY);
+		if (!this.imageGroup) return;
+		this.imageGroup.x(state.x);
+		this.imageGroup.y(state.y);
+		this.imageGroup.scaleX(state.scaleX);
+		this.imageGroup.scaleY(state.scaleY);
 		// 更新位置和缩放信息
 		this.imageOffsetX = state.x;
 		this.imageOffsetY = state.y;
@@ -348,9 +364,11 @@ export class ImageEditor {
 	 * 清除图片
 	 */
 	public clearImage(): void {
-		if (this.imageNode) {
-			this.imageNode.destroy();
+		if (this.imageGroup) {
+			this.imageGroup.destroy();
+			this.imageGroup = null;
 			this.imageNode = null;
+			this.brushLayer = null;
 		}
 		// 同步清空滤镜上下文
 		this.filterManager.setImageContext(null, this.layer);
@@ -358,15 +376,13 @@ export class ImageEditor {
 			this.transformer.nodes([]);
 		}
 		this.layer?.draw();
-		// 清除画笔痕迹
-		this.clearBrush();
 	}
 
 	/**
 	 * 开启画笔模式
 	 */
 	public enableBrush(color: string = '#000000', size: number = 10): void {
-		if (!this.stage || !this.brushLayer) return;
+		if (!this.stage || !this.imageGroup) return;
 		
 		this.brushColor = color;
 		this.brushSize = size;
@@ -377,9 +393,9 @@ export class ImageEditor {
 			(this.stage.content as HTMLElement).style.cursor = 'crosshair';
 		}
 		
-		// 禁用图片拖拽，避免干扰画笔绘制
-		if (this.imageNode) {
-			this.imageNode.draggable(false);
+		// 禁用 Group 拖拽，避免干扰画笔绘制
+		if (this.imageGroup) {
+			this.imageGroup.draggable(false);
 		}
 		
 		// 隐藏变换器
@@ -405,9 +421,9 @@ export class ImageEditor {
 			(this.stage.content as HTMLElement).style.cursor = 'default';
 		}
 		
-		// 恢复图片拖拽
-		if (this.imageNode) {
-			this.imageNode.draggable(true);
+		// 恢复 Group 拖拽
+		if (this.imageGroup) {
+			this.imageGroup.draggable(true);
 		}
 		
 		// 取消绑定画笔事件
@@ -429,7 +445,7 @@ export class ImageEditor {
 		// 如果正在绘制，更新当前线条的粗细
 		if (this.brushLine) {
 			this.brushLine.strokeWidth(this.brushSize);
-			this.brushLayer?.draw();
+			this.layer?.draw();
 		}
 	}
 
@@ -437,9 +453,14 @@ export class ImageEditor {
 	 * 清除所有画笔痕迹
 	 */
 	public clearBrush(): void {
-		if (this.brushLayer) {
-			this.brushLayer.destroyChildren();
-			this.brushLayer.draw();
+		if (this.imageGroup) {
+			// 移除 Group 中除了图片之外的所有子元素（即画笔线条）
+			const children = this.imageGroup.getChildren();
+			// 第一个子元素是图片，保留它
+			for (let i = children.length - 1; i > 0; i--) {
+				children[i].destroy();
+			}
+			this.layer?.draw();
 		}
 		this.brushPoints = [];
 		this.brushLine = null;
@@ -449,7 +470,7 @@ export class ImageEditor {
 	 * 画笔开始绘制
 	 */
 	private handleBrushStart = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
-		if (!this.brushLayer) return;
+		if (!this.imageGroup) return;
 		
 		e.evt.preventDefault();
 		this.isDrawing = true;
@@ -458,8 +479,12 @@ export class ImageEditor {
 		const pos = this.stage!.getPointerPosition();
 		if (!pos) return;
 		
-		// 开始新的线条
-		this.brushPoints = [pos.x, pos.y];
+		// 转换为相对于 Group 的坐标
+		const groupPos = this.imageGroup.getRelativePointerPosition();
+		if (!groupPos) return;
+		
+		// 开始新的线条（坐标相对于 Group）
+		this.brushPoints = [groupPos.x, groupPos.y];
 		
 		this.brushLine = new Konva.Line({
 			points: this.brushPoints,
@@ -470,27 +495,28 @@ export class ImageEditor {
 			globalCompositeOperation: 'source-over',
 		});
 		
-		this.brushLayer.add(this.brushLine);
+		// 将画笔线条添加到 Group 中
+		this.imageGroup.add(this.brushLine as any);
 	}
 
 	/**
 	 * 画笔移动绘制
 	 */
 	private handleBrushMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void => {
-		if (!this.isDrawing || !this.brushLine || !this.brushLayer) return;
+		if (!this.isDrawing || !this.brushLine || !this.imageGroup) return;
 		
 		e.evt.preventDefault();
 		
-		// 获取鼠标位置
-		const pos = this.stage!.getPointerPosition();
-		if (!pos) return;
+		// 获取相对于 Group 的鼠标位置
+		const groupPos = this.imageGroup.getRelativePointerPosition();
+		if (!groupPos) return;
 		
-		// 添加新的点
-		this.brushPoints.push(pos.x, pos.y);
+		// 添加新的点（相对于 Group）
+		this.brushPoints.push(groupPos.x, groupPos.y);
 		
 		// 更新线条
 		this.brushLine.points(this.brushPoints);
-		this.brushLayer.batchDraw();
+		this.layer?.batchDraw();
 	}
 
 	/**
@@ -595,17 +621,19 @@ export class ImageEditor {
 					// 绘制应用了滤镜的图片
 					ctx.drawImage(img, 0, 0, this.originalImageWidth, this.originalImageHeight);
 
-					// 如果有画笔图层，叠加绘制画笔
-					if (this.brushLayer) {
-						const brushChildren = this.brushLayer.getChildren();
-						if (brushChildren.length > 0) {
+					// 如果有画笔痕迹，叠加绘制画笔
+					if (this.imageGroup) {
+						const groupChildren = this.imageGroup.getChildren();
+						// 第一个元素是图片，从第二个开始是画笔线条
+						if (groupChildren.length > 1) {
 							ctx.save();
 
-							brushChildren.forEach((child) => {
+							for (let i = 1; i < groupChildren.length; i++) {
+								const child = groupChildren[i];
 								if (child instanceof Konva.Line) {
 									const originalPoints = child.points();
 									
-									if (originalPoints.length < 4) return;
+									if (originalPoints.length < 4) continue;
 
 									// 设置画笔样式
 									ctx.strokeStyle = child.stroke();
@@ -616,18 +644,15 @@ export class ImageEditor {
 									// 开始路径
 									ctx.beginPath();
 
-									// 转换每个点的坐标并绘制
-									for (let i = 0; i < originalPoints.length; i += 2) {
-										const stageX = originalPoints[i];
-										const stageY = originalPoints[i + 1];
+									// 画笔线条坐标已经是相对于 Group 的，直接转换为原始图片坐标
+									for (let j = 0; j < originalPoints.length; j += 2) {
+										const groupX = originalPoints[j];
+										const groupY = originalPoints[j + 1];
 										
-										const relativeX = stageX - this.imageOffsetX;
-										const relativeY = stageY - this.imageOffsetY;
+										const imageX = groupX / this.imageScale;
+										const imageY = groupY / this.imageScale;
 										
-										const imageX = relativeX / this.imageScale;
-										const imageY = relativeY / this.imageScale;
-										
-										if (i === 0) {
+										if (j === 0) {
 											ctx.moveTo(imageX, imageY);
 										} else {
 											ctx.lineTo(imageX, imageY);
@@ -636,7 +661,7 @@ export class ImageEditor {
 
 									ctx.stroke();
 								}
-							});
+							}
 
 							ctx.restore();
 						}
@@ -669,14 +694,14 @@ export class ImageEditor {
 	 */
 	public exportBrushLayer(): Promise<string> {
 		return new Promise((resolve, reject) => {
-			if (!this.brushLayer || !this.originalImageWidth || !this.originalImageHeight) {
+			if (!this.imageGroup || !this.originalImageWidth || !this.originalImageHeight) {
 				reject(new Error("画笔图层或图片未加载"));
 				return;
 			}
 
-			// 检查是否有画笔痕迹
-			const brushChildren = this.brushLayer.getChildren();
-			if (brushChildren.length === 0) {
+			// 检查是否有画笔痕迹（Group 的第一个子元素是图片，其余是画笔线条）
+			const groupChildren = this.imageGroup.getChildren();
+			if (groupChildren.length <= 1) {
 				reject(new Error("没有画笔痕迹可导出"));
 				return;
 			}
@@ -701,12 +726,13 @@ export class ImageEditor {
 				ctx.lineCap = 'round';
 				ctx.lineJoin = 'round';
 
-				// 遍历画笔图层中的所有线条
-				brushChildren.forEach((child) => {
+				// 遍历 Group 中的所有画笔线条（跳过第一个元素，即图片）
+				for (let i = 1; i < groupChildren.length; i++) {
+					const child = groupChildren[i];
 					if (child instanceof Konva.Line) {
 						const originalPoints = child.points();
 						
-						if (originalPoints.length < 4) return; // 至少需要两个点
+						if (originalPoints.length < 4) continue; // 至少需要两个点
 
 						// 设置画笔粗细（转换为原始图片尺寸）
 						const brushWidth = child.strokeWidth() / this.imageScale;
@@ -715,21 +741,17 @@ export class ImageEditor {
 						// 开始路径
 						ctx.beginPath();
 
-						// 转换每个点的坐标并绘制
-						for (let i = 0; i < originalPoints.length; i += 2) {
-							// 将 stage 坐标转换为图片坐标
-							const stageX = originalPoints[i];
-							const stageY = originalPoints[i + 1];
+						// 画笔线条的坐标已经是相对于 Group 的，直接转换为原始图片坐标
+						for (let j = 0; j < originalPoints.length; j += 2) {
+							// Group 内的坐标（已经相对于图片）
+							const groupX = originalPoints[j];
+							const groupY = originalPoints[j + 1];
 							
-							// 减去图片在 stage 上的偏移
-							const relativeX = stageX - this.imageOffsetX;
-							const relativeY = stageY - this.imageOffsetY;
+							// 转换为原始图片坐标（考虑图片的缩放）
+							const imageX = groupX / this.imageScale;
+							const imageY = groupY / this.imageScale;
 							
-							// 转换为原始图片坐标
-							const imageX = relativeX / this.imageScale;
-							const imageY = relativeY / this.imageScale;
-							
-							if (i === 0) {
+							if (j === 0) {
 								ctx.moveTo(imageX, imageY);
 							} else {
 								ctx.lineTo(imageX, imageY);
@@ -739,7 +761,7 @@ export class ImageEditor {
 						// 绘制路径
 						ctx.stroke();
 					}
-				});
+				}
 
 				// 导出为图片
 				const dataURL = tempCanvas.toDataURL('image/png');
@@ -758,17 +780,15 @@ export class ImageEditor {
 		// 先关闭画笔模式
 		this.disableBrush();
 		
-		if (this.imageNode) {
-			this.imageNode.destroy();
+		if (this.imageGroup) {
+			this.imageGroup.destroy();
+			this.imageGroup = null;
 			this.imageNode = null;
+			this.brushLayer = null;
 		}
 		if (this.transformer) {
 			this.transformer.destroy();
 			this.transformer = null;
-		}
-		if (this.brushLayer) {
-			this.brushLayer.destroy();
-			this.brushLayer = null;
 		}
 		if (this.layer) {
 			this.layer.destroy();
