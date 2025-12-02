@@ -23,6 +23,9 @@ const highlight = ref<number>(0); // 高光：-100 到 100（调整图片亮部�
 const isBrushMode = ref<boolean>(false);
 const brushSize = ref<number>(10); // 画笔粗细：1 到 50
 
+// 对比模式状态
+const isComparing = ref<boolean>(false); // 是否正在对比
+
 // localStorage 键名
 const STORAGE_KEY = "photoEditor_state";
 
@@ -385,6 +388,27 @@ const handleExportEditedImage = async () => {
 	}
 };
 
+// 对比调整前后效果
+const toggleCompare = () => {
+	if (!imageEditor.value) return;
+	
+	isComparing.value = !isComparing.value;
+	
+	if (isComparing.value) {
+		// 显示原图：重置所有滤镜
+		imageEditor.value.resetFilters();
+	} else {
+		// 恢复调整后的效果：重新应用所有滤镜
+		imageEditor.value.setContrast(contrast.value);
+		imageEditor.value.setTemperature(temperature.value);
+		imageEditor.value.setSaturation(saturation.value);
+		imageEditor.value.setEnhance(enhance.value);
+		imageEditor.value.setBlur(blur.value);
+		imageEditor.value.setShadow(shadow.value);
+		imageEditor.value.setHighlight(highlight.value);
+	}
+};
+
 // 初始化图片编辑器
 const initImageEditor = () => {
 	if (!containerRef.value) return;
@@ -493,6 +517,19 @@ const max = 100;
 				<label for="file-input" class="upload-button">
 					选择图片上传
 				</label>
+				<!-- 对比按钮 -->
+				<button 
+					v-if="imageUrl" 
+					@mousedown="toggleCompare" 
+					@mouseup="toggleCompare"
+					@mouseleave="isComparing && toggleCompare()"
+					@touchstart="toggleCompare"
+					@touchend="toggleCompare"
+					class="compare-button"
+					:class="{ 'active': isComparing }"
+				>
+					{{ isComparing ? '调整后' : '对比原图' }}
+				</button>
 			</div>
 		</div>
 
@@ -693,7 +730,10 @@ const max = 100;
 }
 
 .upload-area {
-	display: inline-block;
+	display: flex;
+	gap: 16px;
+	justify-content: center;
+	align-items: center;
 }
 
 .file-input {
@@ -717,6 +757,37 @@ const max = 100;
 	background: #f0f0f0;
 	transform: translateY(-2px);
 	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.compare-button {
+	padding: 12px 24px;
+	background: rgba(255, 255, 255, 0.95);
+	color: #667eea;
+	border: 2px solid #667eea;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 16px;
+	font-weight: 600;
+	transition: all 0.3s ease;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+	user-select: none;
+}
+
+.compare-button:hover {
+	background: white;
+	transform: translateY(-2px);
+	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.compare-button.active {
+	background: #667eea;
+	color: white;
+	border-color: white;
+	box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+}
+
+.compare-button:active {
+	transform: translateY(0);
 }
 
 .editor-wrapper {
