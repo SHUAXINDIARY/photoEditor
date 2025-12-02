@@ -16,6 +16,7 @@ const temperature = ref<number>(0); // 色温：-100 到 100
 const saturation = ref<number>(0); // 饱和度：-100 到 100
 const enhance = ref<number>(0); // 增强：0 到 100
 const blur = ref<number>(0); // 模糊：0 到 100
+const shadow = ref<number>(0); // 阴影：-100 到 100（调整图片暗部亮度）
 
 // 画笔状态
 const isBrushMode = ref<boolean>(false);
@@ -41,6 +42,7 @@ const saveStateToStorage = () => {
 		saturation: saturation.value,
 		enhance: enhance.value,
 		blur: blur.value,
+		shadow: shadow.value,
 		imageState: imageState,
 		timestamp: Date.now(),
 	};
@@ -111,6 +113,10 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 				blur.value = state.blur;
 				imageEditor.value.setBlur(state.blur);
 			}
+			if (typeof state.shadow === "number") {
+				shadow.value = state.shadow;
+				imageEditor.value.setShadow(state.shadow);
+			}
 
 			// 恢复图片状态（位置、缩放）
 			if (state.imageState) {
@@ -157,7 +163,7 @@ const clearStorage = () => {
 };
 
 // 节流更新滤镜（每 50ms 最多更新一次）
-const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur', value: number) => {
+const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur' | 'shadow', value: number) => {
 	if (!imageEditor.value) return;
 	if (type === 'contrast') {
 		imageEditor.value.setContrast(value);
@@ -169,6 +175,8 @@ const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'satu
 		imageEditor.value.setEnhance(value);
 	} else if (type === 'blur') {
 		imageEditor.value.setBlur(value);
+	} else if (type === 'shadow') {
+		imageEditor.value.setShadow(value);
 	}
 }, 50);
 
@@ -254,6 +262,22 @@ const resetBlur = () => {
 	handleBlurChange(0);
 };
 
+// 处理阴影变化
+const handleShadowChange = (value: number) => {
+	if (isBrushMode.value) return;
+	shadow.value = value;
+	// 使用节流更新滤镜，避免频繁重绘
+	throttledUpdateFilter('shadow', value);
+	// 使用防抖保存，避免频繁操作
+	debouncedSaveState();
+};
+
+// 重置单项：阴影
+const resetShadow = () => {
+	if (isBrushMode.value) return;
+	handleShadowChange(0);
+};
+
 // 重置所有调整
 const handleReset = () => {
 	contrast.value = 0;
@@ -261,6 +285,7 @@ const handleReset = () => {
 	saturation.value = 0;
 	enhance.value = 0;
 	blur.value = 0;
+	shadow.value = 0;
 	if (imageEditor.value) {
 		imageEditor.value.resetFilters();
 	}
@@ -526,6 +551,21 @@ const max = 100;
 							<span>0</span>
 							<span>50</span>
 							<span>100</span>
+						</div>
+					</div>
+					<!-- 阴影调节 -->
+					<div class="tool-item" :class="{ 'tool-item-disabled': isBrushMode }">
+						<label class="tool-label" @dblclick="resetShadow">
+							<span>阴影</span>
+							<span class="tool-value">{{ shadow }}</span>
+						</label>
+						<input type="range" min="-100" max="100" step="1" v-model.number="shadow"
+							:disabled="isBrushMode"
+							@input="handleShadowChange(shadow)" @change="saveStateToStorage" class="tool-slider" />
+						<div class="tool-range-labels">
+							<span>压暗</span>
+							<span>0</span>
+							<span>提亮</span>
 						</div>
 					</div>
 					<!-- 重置按钮 -->

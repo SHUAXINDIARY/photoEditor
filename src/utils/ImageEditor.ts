@@ -354,6 +354,14 @@ export class ImageEditor {
 	}
 
 	/**
+	 * 设置阴影
+	 * @param shadow 阴影强度，范围 0 到 100，0 为无阴影
+	 */
+	public setShadow(shadow: number): void {
+		this.filterManager.setShadow(shadow);
+	}
+
+	/**
 	 * 重置所有滤镜效果
 	 */
 	public resetFilters(): void {
