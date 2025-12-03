@@ -513,6 +513,15 @@ const max = 100;
 		<div class="upload-section">
 			<div class="title">图片编辑器</div>
 			<div class="upload-area">
+				<!-- 查看仓库按钮 -->
+				<a 
+					href="https://github.com/SHUAXINDIARY/photoEditor" 
+					target="_blank" 
+					rel="noopener noreferrer"
+					class="upload-button repo-button"
+				>
+					查看仓库
+				</a>
 				<input type="file" accept="image/*" @change="handleFileUpload" id="file-input" class="file-input" />
 				<label for="file-input" class="upload-button">
 					选择图片上传
@@ -757,6 +766,13 @@ const max = 100;
 	background: #f0f0f0;
 	transform: translateY(-2px);
 	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.repo-button {
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 }
 
 .compare-button {
