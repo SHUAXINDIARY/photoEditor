@@ -17,6 +17,13 @@ const route = useRoute();
 					>
 						图片编辑
 					</router-link>
+					<router-link 
+						to="/video-editor" 
+						class="nav-link"
+						:class="{ active: route.name === 'VideoEditor' }"
+					>
+						视频编辑
+					</router-link>
 				</div>
 			</div>
 		</nav>
