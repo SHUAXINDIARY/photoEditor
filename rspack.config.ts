@@ -67,5 +67,8 @@ export default defineConfig({
 	},
 	experiments: {
 		css: true
+	},
+	devServer: {
+		historyApiFallback: true,
 	}
 });
