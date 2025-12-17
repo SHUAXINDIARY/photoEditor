@@ -10,6 +10,7 @@ export class VideoEditor {
   private ffmpeg: FFmpeg;
   private isLoaded: boolean = false;
   private loadingProgress: number = 0;
+  private currentProgressCallback: ((progress: number) => void) | null = null;
 
   constructor() {
     this.ffmpeg = new FFmpeg();
@@ -47,18 +48,33 @@ export class VideoEditor {
           console.log("[FFmpeg]", message);
         });
 
+        // 设置一个通用的进度监听器，用于转发到当前的回调
         this.ffmpeg.on("progress", ({ progress }) => {
-          this.loadingProgress = progress * 100;
-          console.log(`[FFmpeg] 加载进度: ${this.loadingProgress.toFixed(2)}%`);
+          const progressPercent = progress * 100;
+          this.loadingProgress = progressPercent;
+          console.log(`[FFmpeg] 加载进度: ${progressPercent.toFixed(2)}%`);
+          // 如果有当前的回调，调用它
+          if (this.currentProgressCallback) {
+            this.currentProgressCallback(progressPercent);
+          }
         });
       } catch (eventError) {
         console.warn("[FFmpeg] 设置事件监听器失败，继续执行:", eventError);
       }
 
+      // 等待一小段时间确保文件系统完全初始化
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // 验证 FFmpeg 是否真正加载
+      if (!this.ffmpeg.loaded) {
+        throw new Error("FFmpeg 加载后状态异常");
+      }
+
       this.isLoaded = true;
-      console.log("[FFmpeg] 初始化完成");
+      console.log("[FFmpeg] 初始化完成，文件系统已就绪");
     } catch (error) {
       console.error("[FFmpeg] 初始化失败:", error);
+      this.isLoaded = false;
       throw error;
     }
   }
@@ -81,16 +97,37 @@ export class VideoEditor {
       await this.load();
     }
 
+    // 确保 FFmpeg 完全加载
+    if (!this.ffmpeg.loaded) {
+      throw new Error("FFmpeg 未正确加载，请稍后重试");
+    }
+
     if (speed <= 0) {
       throw new Error("倍速值必须大于 0");
     }
 
-    try {
-      const inputFileName = "input.mp4";
-      const outputFileName = "output.mp4";
+    // 使用时间戳生成唯一文件名，避免文件冲突
+    const timestamp = Date.now();
+    const inputFileName = `input_${timestamp}.mp4`;
+    const outputFileName = `output_${timestamp}.mp4`;
 
+    try {
       // 将输入文件写入 FFmpeg 文件系统
-      await this.ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
+      // 使用 fetchFile 获取文件数据
+      console.log("[FFmpeg] 开始读取输入文件...");
+      const fileData = await fetchFile(inputFile);
+
+      // 确保文件数据是有效的
+      if (!fileData) {
+        throw new Error("无法读取输入文件");
+      }
+
+      console.log("[FFmpeg] 文件数据大小:", fileData instanceof Uint8Array ? fileData.length : "未知");
+
+      // 写入文件到 FFmpeg 虚拟文件系统
+      console.log("[FFmpeg] 写入文件到虚拟文件系统:", inputFileName);
+      await this.ffmpeg.writeFile(inputFileName, fileData);
+      console.log("[FFmpeg] 文件写入成功");
 
       // 构建 FFmpeg 命令
       // setpts: 调整视频时间戳（视频倍速）
@@ -118,59 +155,71 @@ export class VideoEditor {
       const filterComplex = `[0:v]${videoFilter}[v];[0:a]${audioFilter}[a]`;
 
       // 执行 FFmpeg 命令
+      console.log("[FFmpeg] 开始执行 FFmpeg 命令，倍速:", speed);
       await this.ffmpeg.exec([
-        "-i",
-        inputFileName,
-        "-filter_complex",
-        filterComplex,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        "-preset",
-        "fast",
-        "-crf",
-        "23",
+        
+        "-i", inputFileName,
+        "-an", // ❗禁用音频
+        "-filter:v", `setpts=${1 / speed}*PTS`,
         outputFileName,
       ]);
+      // 读取输出文件（注意：readFile 返回 Promise）
+      console.log("[FFmpeg] 读取输出文件:", outputFileName);
+      const data = (await this.ffmpeg.readFile(outputFileName)) as Uint8Array;
+      console.log("[FFmpeg] 输出文件读取成功，大小:", data.length);
 
-      // 读取输出文件
-      const data = await this.ffmpeg.readFile(outputFileName);
+      // 转换为 Blob（data 是 Uint8Array）
+      // 创建新的 ArrayBuffer 以避免 SharedArrayBuffer 类型问题
+      const arrayBuffer = new ArrayBuffer(data.length);
+      const view = new Uint8Array(arrayBuffer);
+      view.set(data);
+      const resultBlob = new Blob([arrayBuffer], { type: "video/mp4" });
 
-      // 清理文件
-      await this.ffmpeg.deleteFile(inputFileName);
-      await this.ffmpeg.deleteFile(outputFileName);
-
-      // 转换为 Blob
-      // data 可能是 Uint8Array 或 string
-      if (data instanceof Uint8Array) {
-        // 创建一个新的 ArrayBuffer 来避免类型问题
-        const arrayBuffer = new ArrayBuffer(data.length);
-        const view = new Uint8Array(arrayBuffer);
-        view.set(data);
-        return new Blob([arrayBuffer], { type: "video/mp4" });
-      } else if (typeof data === "string") {
-        // 如果是 base64 字符串，需要转换
-        const binaryString = atob(data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        return new Blob([bytes.buffer], { type: "video/mp4" });
-      } else {
-        return new Blob([data], { type: "video/mp4" });
+      // 清理文件（在 finally 中确保清理）
+      try {
+        await this.ffmpeg.deleteFile(inputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输入文件失败:", cleanupError);
       }
+      try {
+        await this.ffmpeg.deleteFile(outputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输出文件失败:", cleanupError);
+      }
+
+      return resultBlob;
+
     } catch (error) {
       console.error("[FFmpeg] 视频处理失败:", error);
-      throw new Error(
-        `视频倍速处理失败: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      console.error("[FFmpeg] 错误详情:", {
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        ffmpegLoaded: this.ffmpeg.loaded,
+        isLoaded: this.isLoaded,
+      });
+
+      // 确保在错误时也清理文件
+      try {
+        await this.ffmpeg.deleteFile(inputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输入文件失败:", cleanupError);
+      }
+      try {
+        await this.ffmpeg.deleteFile(outputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输出文件失败:", cleanupError);
+      }
+
+      // 提供更详细的错误信息
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("FS error") || errorMessage.includes("ErrnoError")) {
+        throw new Error(
+          `FFmpeg 文件系统错误。可能的原因：1) FFmpeg 未完全加载 2) 文件系统未初始化 3) 文件操作冲突。原始错误: ${errorMessage}`
+        );
+      }
+
+      throw new Error(`视频倍速处理失败: ${errorMessage}`);
     }
   }
 
@@ -190,23 +239,17 @@ export class VideoEditor {
       await this.load();
     }
 
-    // 设置进度监听
-    let progressHandler: ((event: any) => void) | undefined;
-    if (onProgress) {
-      progressHandler = ({ progress }: { progress: number }) => {
-        onProgress(progress * 100);
-      };
-      this.ffmpeg.on("progress", progressHandler);
-    }
+    // 使用回调函数的方式，而不是直接设置事件监听器
+    // 这样可以避免访问私有成员的问题
+    const previousCallback = this.currentProgressCallback;
+    this.currentProgressCallback = onProgress || null;
 
     try {
       const result = await this.changeSpeed(inputFile, speed);
       return result;
     } finally {
-      // 移除进度监听
-      if (onProgress && progressHandler) {
-        this.ffmpeg.off("progress", progressHandler);
-      }
+      // 恢复之前的回调
+      this.currentProgressCallback = previousCallback;
     }
   }
 
