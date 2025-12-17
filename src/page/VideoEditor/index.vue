@@ -10,14 +10,39 @@ const speed = ref<number>(1.0); // 倍速值，默认 1.0
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
+const isFFmpegLoading = ref<boolean>(false);
+const ffmpegLoadProgress = ref<number>(0);
 
 // 初始化 VideoEditor
 onMounted(async () => {
 	videoEditor.value = new VideoEditor();
-	setTimeout(async () => {
-		await videoEditor?.value?.load();
-		isFFmpegLoaded.value = true;
-	}, 1000);
+	isFFmpegLoading.value = true;
+	ffmpegLoadProgress.value = 0;
+
+	try {
+		// 模拟加载进度（因为 load 过程没有实时进度）
+		const progressInterval = setInterval(() => {
+			if (ffmpegLoadProgress.value < 90) {
+				ffmpegLoadProgress.value += 10;
+			}
+		}, 200);
+
+		await videoEditor.value.load();
+
+		// 加载完成，设置进度为 100%
+		clearInterval(progressInterval);
+		ffmpegLoadProgress.value = 100;
+
+		// 短暂延迟后隐藏加载界面
+		setTimeout(() => {
+			isFFmpegLoaded.value = true;
+			isFFmpegLoading.value = false;
+		}, 500);
+	} catch (error) {
+		console.error("FFmpeg 加载失败:", error);
+		alert("FFmpeg 加载失败，请刷新页面重试");
+		isFFmpegLoading.value = false;
+	}
 });
 
 // 清理资源
@@ -146,8 +171,25 @@ const downloadVideo = () => {
 
 <template>
 	<div class="video-editor-container">
+		<!-- FFmpeg 加载遮罩层 -->
+		<div v-if="isFFmpegLoading" class="loading-overlay">
+			<div class="loading-content">
+				<div class="loading-spinner"></div>
+				<h2 class="loading-title">正在加载 FFmpeg...</h2>
+				<div class="loading-progress-bar">
+					<div class="loading-progress-fill" :style="{ width: `${ffmpegLoadProgress}%` }"></div>
+				</div>
+				<p class="loading-text">{{ ffmpegLoadProgress }}%</p>
+				<p class="loading-hint">首次加载可能需要一些时间，请耐心等待</p>
+			</div>
+		</div>
+
 		<div class="editor-header">
 			<h1 class="editor-title">视频编辑器</h1>
+			<div v-if="isFFmpegLoaded" class="ffmpeg-status">
+				<span class="status-indicator"></span>
+				<span class="status-text">FFmpeg 已就绪</span>
+			</div>
 		</div>
 
 		<div class="upload-section">
@@ -253,6 +295,39 @@ const downloadVideo = () => {
 	font-size: 2.5rem;
 	font-weight: bold;
 	margin-bottom: 1rem;
+}
+
+.ffmpeg-status {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	margin-top: 10px;
+	font-size: 14px;
+	opacity: 0.9;
+}
+
+.status-indicator {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #4caf50;
+	animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+	0%, 100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.6;
+		transform: scale(1.1);
+	}
+}
+
+.status-text {
+	font-weight: 500;
 }
 
 .upload-section {
@@ -574,5 +649,84 @@ const downloadVideo = () => {
 	font-size: 14px;
 	font-weight: 600;
 	opacity: 0.9;
+}
+
+/* FFmpeg 加载遮罩层样式 */
+.loading-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
+}
+
+.loading-content {
+	text-align: center;
+	padding: 40px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 20px;
+	backdrop-filter: blur(10px);
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+	max-width: 500px;
+	width: 90%;
+}
+
+.loading-spinner {
+	width: 60px;
+	height: 60px;
+	border: 4px solid rgba(255, 255, 255, 0.3);
+	border-top-color: white;
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+	margin: 0 auto 20px;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.loading-title {
+	font-size: 1.8rem;
+	font-weight: bold;
+	margin-bottom: 20px;
+	color: white;
+}
+
+.loading-progress-bar {
+	width: 100%;
+	height: 12px;
+	background: rgba(255, 255, 255, 0.2);
+	border-radius: 6px;
+	overflow: hidden;
+	margin-bottom: 12px;
+}
+
+.loading-progress-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #4caf50, #8bc34a);
+	border-radius: 6px;
+	transition: width 0.3s ease;
+	box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+}
+
+.loading-text {
+	font-size: 1.5rem;
+	font-weight: bold;
+	margin-bottom: 10px;
+	color: white;
+}
+
+.loading-hint {
+	font-size: 0.9rem;
+	opacity: 0.8;
+	color: white;
+	margin-top: 10px;
 }
 </style>
