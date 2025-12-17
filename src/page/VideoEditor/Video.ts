@@ -157,10 +157,11 @@ export class VideoEditor {
       // 执行 FFmpeg 命令
       console.log("[FFmpeg] 开始执行 FFmpeg 命令，倍速:", speed);
       await this.ffmpeg.exec([
-        
         "-i", inputFileName,
-        "-an", // ❗禁用音频
+        "-an",
         "-filter:v", `setpts=${1 / speed}*PTS`,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
         outputFileName,
       ]);
       // 读取输出文件（注意：readFile 返回 Promise）
