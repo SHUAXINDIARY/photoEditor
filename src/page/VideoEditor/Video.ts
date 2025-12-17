@@ -24,17 +24,9 @@ export class VideoEditor {
     }
 
     try {
-      // 监听加载进度
-      //   this.ffmpeg.on("log", ({ message }) => {
-      //     console.log("[FFmpeg]", message);
-      //   });
-
-      //   this.ffmpeg.on("progress", ({ progress }) => {
-      //     this.loadingProgress = progress * 100;
-      //     console.log(`[FFmpeg] 加载进度: ${this.loadingProgress.toFixed(2)}%`);
-      //   });
-      const obj = new FFmpeg();
-      await obj.load({
+      // 先加载 FFmpeg，然后再设置事件监听器
+      // 使用 this.ffmpeg 而不是创建新实例
+      await this.ffmpeg.load({
         coreURL: await toBlobURL(
           `${baseURL}/ffmpeg-core.js`,
           "text/javascript"
@@ -47,14 +39,27 @@ export class VideoEditor {
           `${baseURL}/ffmpeg-core.worker.js`,
           "text/javascript"
         ),
-        // coreURL: `${baseURL}/ffmpeg-core.js`,
-        // wasmURL: `${baseURL}/ffmpeg-core.wasm`,
-        // workerURL: `${baseURL}/ffmpeg-core.worker.js`,
       });
+
+      // 在 load 之后设置事件监听器
+      try {
+        this.ffmpeg.on("log", ({ message }) => {
+          console.log("[FFmpeg]", message);
+        });
+
+        this.ffmpeg.on("progress", ({ progress }) => {
+          this.loadingProgress = progress * 100;
+          console.log(`[FFmpeg] 加载进度: ${this.loadingProgress.toFixed(2)}%`);
+        });
+      } catch (eventError) {
+        console.warn("[FFmpeg] 设置事件监听器失败，继续执行:", eventError);
+      }
+
       this.isLoaded = true;
       console.log("[FFmpeg] 初始化完成");
     } catch (error) {
       console.error("[FFmpeg] 初始化失败:", error);
+      throw error;
     }
   }
 
@@ -191,7 +196,7 @@ export class VideoEditor {
       progressHandler = ({ progress }: { progress: number }) => {
         onProgress(progress * 100);
       };
-      //   this.ffmpeg.on("progress", progressHandler);
+      this.ffmpeg.on("progress", progressHandler);
     }
 
     try {
@@ -200,7 +205,7 @@ export class VideoEditor {
     } finally {
       // 移除进度监听
       if (onProgress && progressHandler) {
-        // this.ffmpeg.off("progress", progressHandler);
+        this.ffmpeg.off("progress", progressHandler);
       }
     }
   }
