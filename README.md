@@ -1,9 +1,13 @@
 ## 项目简介
 
-这是一个基于 **Vue 3 + TypeScript + Rspack + Konva** 实现的前端图片编辑器。  
-支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
+这是一个基于 **Vue 3 + TypeScript + Rspack** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
+
+- **图片编辑器**：使用 **Konva** 实现，支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
+- **视频编辑器**：使用 **FFmpeg.wasm** 实现，支持视频倍速调整、对比度调节，效果可叠加使用，并提供实时进度显示和视频预览功能。
 
 ## 功能概览
+
+### 图片编辑器
 
 - **图片加载与展示**
   - 从本地文件选择图片（`<input type="file" accept="image/*">`）
@@ -42,15 +46,50 @@
   - 细节提示：未上传图片时展示操作提示说明
   - 按钮禁用状态视觉反馈：置灰样式清晰标识不可用状态
 
+### 视频编辑器
+
+- **视频加载与预览**
+  - 从本地文件选择视频（支持 MP4、WebM、OGG 等格式）
+  - 实时视频预览，支持播放控制
+  - 时间轴组件，显示视频播放进度
+
+- **视频处理功能**
+  - **倍速调整**：范围 \[0.25x, 4x]，步长 0.25x，支持预设快速选择
+  - **对比度调整**：范围 \[0.5, 2.0]，步长 0.1
+  - **效果叠加**：倍速和对比度可以同时应用，互不覆盖
+  - **智能状态管理**：应用效果时自动保留已应用的其他效果设置
+
+- **FFmpeg.wasm 集成**
+  - 基于 WebAssembly 的 FFmpeg，完全前端运行
+  - 首次加载显示进度条，支持加载失败重试
+  - 使用 `@ffmpeg/ffmpeg` 和 `@ffmpeg/core-mt` 多线程版本，提升处理性能
+
+- **处理与导出**
+  - 实时处理进度显示（0-100%）
+  - 处理完成后自动更新预览
+  - 一键下载处理后的视频文件
+  - 支持清除视频，重置所有设置
+
+- **UX & 交互**
+  - 左侧控制面板：倍速控制、对比度控制、视频信息
+  - 右侧视频区域：视频预览 + 时间轴
+  - 处理中状态禁用相关操作，避免冲突
+  - 现代化渐变背景，清晰的视觉层次
+
 ## 技术栈与关键依赖
 
 - **前端框架**：Vue 3（`<script setup lang="ts">` 组合式 API）
 - **语言**：TypeScript
 - **构建工具**：Rspack
+- **路由管理**：Vue Router 4
 - **UI 渲染与图片处理**：Konva
   - `Konva.Stage` / `Konva.Layer` / `Konva.Image` / `Konva.Transformer`
   - `Konva.Line` 用于画笔轨迹
   - 自定义滤镜注册到 `Konva.Filters`
+- **视频处理**：FFmpeg.wasm
+  - `@ffmpeg/ffmpeg`：FFmpeg WebAssembly 封装
+  - `@ffmpeg/core-mt`：多线程核心，提升处理性能
+  - `@ffmpeg/util`：工具函数（fetchFile、toBlobURL 等）
 - **工具函数**：自定义 `throttle` / `debounce`（位于 `src/utils/utils.ts`）
 - **本地存储**：`localStorage`（图片 Base64 + 调节参数 + 位置/缩放）
 
@@ -60,8 +99,18 @@
 
 ```text
 src/
-  App.vue                    # 页面主入口，负责布局、状态管理、与 ImageEditor 交互
+  App.vue                    # 应用主入口，导航栏和路由视图
   main.ts                    # Vue 启动入口
+  router/
+    index.ts                 # Vue Router 路由配置
+  page/
+    PhotoEditor/
+      index.vue              # 图片编辑器页面组件
+    VideoEditor/
+      index.vue              # 视频编辑器页面组件
+      Video.ts                # 视频编辑器核心类（FFmpeg 封装）
+  components/
+    TimeLine.vue             # 视频时间轴组件
   utils/
     ImageEditor.ts           # Konva 封装的图片编辑器核心类（基础画布能力）
     ImageFilterManager.ts    # 图片滤镜管理模块（与画布能力解耦）
@@ -75,13 +124,18 @@ src/
 
 整体采用「**模块化分层架构**」：
 
-- **`App.vue`**：只关心 UI、状态和与用户的交互
+- **`App.vue`**：应用主入口，提供导航栏和路由视图容器
+- **`PhotoEditor/index.vue`**：图片编辑器页面，负责 UI、状态管理和与 ImageEditor 交互
+- **`VideoEditor/index.vue`**：视频编辑器页面，负责 UI、状态管理和与 VideoEditor 交互
 - **`ImageEditor` 类**：负责基础画布能力（Stage/Layer 管理、图片加载、画笔绘制、导出等）
 - **`ImageFilterManager` 类**：独立管理所有滤镜效果（对比度、色温、饱和度、模糊、增强），与画布能力解耦
+- **`VideoEditor` 类**：封装 FFmpeg.wasm，提供视频处理能力（倍速、对比度等）
 
 ### 组件与类的职责划分
 
-- **`App.vue`**
+#### 图片编辑器模块
+
+- **`PhotoEditor/index.vue`**
   - 持有响应式状态：`contrast`、`temperature`、`saturation`、`enhance`、`blur` 等
   - 负责文件上传、调用 `imageEditor.loadImage`
   - 滑块变更时，通过 `throttledUpdateFilter` 调用 `ImageEditor` 的对应方法
@@ -107,6 +161,27 @@ src/
   - 使用 `requestAnimationFrame` 优化滤镜应用时机
   - 使用 `batchDraw()` 合并多次重绘，提升拖拽流畅度
   - 只在图片加载时建立缓存，后续不再重复 `clearCache()/cache()`，避免高像素图片卡顿
+
+#### 视频编辑器模块
+
+- **`VideoEditor/index.vue`**
+  - 持有响应式状态：`speed`、`contrast`、`appliedSpeed`、`appliedContrast` 等
+  - 管理 FFmpeg 加载状态和进度显示
+  - 负责视频文件上传和预览
+  - 控制倍速和对比度调整，调用 `VideoEditor` 的处理方法
+  - 实现效果叠加逻辑：应用新效果时保留已应用的其他效果
+  - 处理进度显示和错误处理
+  - 提供视频下载功能
+
+- **`VideoEditor` 类**
+  - 封装 FFmpeg.wasm 实例，管理加载状态
+  - 提供视频处理能力：
+    - `changeSpeed(inputFile, speed)`：调整视频倍速
+    - `changeContrast(inputFile, contrast)`：调整视频对比度
+    - `applyFilters(inputFile, options, onProgress)`：同时应用多个效果（倍速 + 对比度）
+  - 支持进度回调，实时更新处理进度
+  - 自动管理临时文件，处理完成后清理
+  - 错误处理和资源清理
 
 ### 数据流与状态持久化
 
@@ -251,13 +326,53 @@ pnpm run build
 pnpm run preview
 ```
 
+## 视频编辑器核心实现说明
+
+### `VideoEditor` 类关键逻辑
+
+- **FFmpeg 初始化**
+  - 使用 `@ffmpeg/core-mt` 多线程版本，提升处理性能
+  - 从 CDN 加载核心文件（core.js、core.wasm、core.worker.js）
+  - 设置进度监听器，支持实时进度回调
+  - 加载失败时提供重试机制
+
+- **视频处理流程**
+  - 将输入文件写入 FFmpeg 虚拟文件系统
+  - 构建 FFmpeg 命令参数
+  - 执行 FFmpeg 处理（支持进度回调）
+  - 读取输出文件并转换为 Blob
+  - 自动清理临时文件
+
+- **效果叠加实现**
+  - `applyFilters` 方法支持同时应用多个效果
+  - 使用 FFmpeg 滤镜链：`eq=contrast=值,setpts=倍速*PTS`
+  - 先应用图像处理（对比度），再应用时间处理（倍速）
+  - 状态管理：维护 `appliedSpeed` 和 `appliedContrast`，确保效果不丢失
+
+- **性能优化**
+  - 使用多线程 FFmpeg 核心，充分利用 Web Worker
+  - 进度回调使用节流，避免频繁更新 UI
+  - 临时文件自动清理，避免内存泄漏
+
 ## 后续可扩展方向
 
+### 图片编辑器
 - **更多高级滤镜**：曲线调节、锐化、噪点、渐变映射等
 - **图层系统**：支持多图层叠加、图层混合模式
 - **撤销/重做**：基于操作记录或快照的历史管理
+
+### 视频编辑器
+- **更多视频效果**：亮度、饱和度、色温、模糊等
+- **视频裁剪**：时间范围选择、画面裁剪
+- **视频合并**：多段视频拼接
+- **音频处理**：音量调节、音频提取、背景音乐添加
+- **视频格式转换**：支持更多输入/输出格式
+
+### 通用功能
 - **服务端集成**：
   - 将编辑结果、画笔遮罩上传到后端，做进一步 AI 抠图/特效处理
   - 提供用户项目保存与分享功能
+- **批量处理**：支持批量处理多张图片或多个视频
+- **云存储集成**：支持从云存储加载和保存文件
 
-当前版本完全前端运行，无服务端依赖，适合作为浏览器端图片编辑功能的基础模块或 DEMO。
+当前版本完全前端运行，无服务端依赖，适合作为浏览器端媒体编辑功能的基础模块或 DEMO。
