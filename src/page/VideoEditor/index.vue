@@ -11,6 +11,7 @@ const originalVideoFile = ref<File | null>(null); // 保存原始文件
 const videoEditor = ref<VideoEditor | null>(null);
 const videoElement = ref<HTMLVideoElement | null>(null); // 视频 DOM 元素
 const speed = ref<number>(1.0); // 倍速值，默认 1.0
+const contrast = ref<number>(1.0); // 对比度值，默认 1.0
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
@@ -84,6 +85,7 @@ const handleVideoUpload = (event: Event) => {
 	videoFile.value = file;
 	originalVideoFile.value = file; // 保存原始文件
 	speed.value = 1.0; // 重置倍速
+	contrast.value = 1.0; // 重置对比度
 	processingProgress.value = 0;
 
 	// 创建视频 URL 用于预览
@@ -101,6 +103,7 @@ const clearVideo = () => {
 	videoFile.value = null;
 	originalVideoFile.value = null;
 	speed.value = 1.0;
+	contrast.value = 1.0;
 	processingProgress.value = 0;
 	// 重置文件输入
 	const fileInput = document.getElementById("video-input") as HTMLInputElement;
@@ -161,6 +164,67 @@ const applySpeed = async () => {
 		videoFile.value = newFile;
 
 		alert(`视频已成功调整为 ${speed.value}x 倍速！`);
+	} catch (error) {
+		console.error("视频处理失败:", error);
+		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
+	} finally {
+		isProcessing.value = false;
+		processingProgress.value = 0;
+	}
+};
+
+// 应用对比度处理
+const applyContrast = async () => {
+	if (!videoEditor.value || !originalVideoFile.value) {
+		alert("请先上传视频文件");
+		return;
+	}
+
+	if (!isFFmpegLoaded.value) {
+		alert("FFmpeg 正在加载中，请稍候...");
+		return;
+	}
+
+	if (contrast.value <= 0) {
+		alert("对比度值必须大于 0");
+		return;
+	}
+
+	if (contrast.value === 1.0) {
+		// 如果对比度为 1.0，恢复原始视频
+		const reader = new FileReader();
+		reader.onload = (e) => {
+			const result = e.target?.result as string;
+			videoUrl.value = result;
+		};
+		reader.readAsDataURL(originalVideoFile.value);
+		return;
+	}
+
+	try {
+		isProcessing.value = true;
+		processingProgress.value = 0;
+
+		// 使用带进度的对比度处理
+		const outputBlob = await videoEditor.value.changeContrastWithProgress(
+			originalVideoFile.value,
+			contrast.value,
+			(progress) => {
+				processingProgress.value = progress;
+			}
+		);
+
+		// 创建新的视频 URL
+		const newVideoUrl = URL.createObjectURL(outputBlob);
+		videoUrl.value = newVideoUrl;
+
+		// 更新 videoFile 为处理后的文件
+		const newFile = new File([outputBlob], `contrast_${contrast.value}_${originalVideoFile.value.name}`, {
+			type: "video/mp4",
+		});
+		videoFile.value = newFile;
+
+		alert(`视频已成功调整对比度为 ${contrast.value.toFixed(2)}！`);
 	} catch (error) {
 		console.error("视频处理失败:", error);
 		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -276,6 +340,33 @@ const downloadVideo = () => {
 							<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
 								:disabled="isProcessing">
 								下载视频
+							</button>
+						</div>
+						<!-- 处理进度 -->
+						<div v-if="isProcessing" class="progress-container">
+							<div class="progress-bar">
+								<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
+							</div>
+							<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+						</div>
+					</div>
+
+					<!-- 对比度调整 -->
+					<div class="contrast-control-panel">
+						<div class="contrast-control-item">
+							<label class="contrast-label">
+								<span>对比度：</span>
+								<span class="contrast-value">{{ contrast.toFixed(2) }}</span>
+							</label>
+							<div class="contrast-controls">
+								<input type="range" min="0.5" max="2.0" step="0.1" v-model.number="contrast"
+									class="contrast-slider" :disabled="isProcessing || !isFFmpegLoaded" />
+							</div>
+						</div>
+						<div class="contrast-actions">
+							<button @click="applyContrast" class="apply-button"
+								:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
+								{{ isProcessing ? "处理中..." : "应用对比度" }}
 							</button>
 						</div>
 						<!-- 处理进度 -->
@@ -990,5 +1081,133 @@ const downloadVideo = () => {
 	.video-preview {
 		max-height: 50vh;
 	}
+}
+
+/* 对比度控制面板样式 */
+.contrast-control-panel {
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 12px;
+	padding: 20px;
+	backdrop-filter: blur(10px);
+}
+
+.contrast-control-item {
+	margin-bottom: 20px;
+}
+
+.contrast-label {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.contrast-value {
+	color: #ffd700;
+	font-size: 18px;
+	font-weight: bold;
+}
+
+.contrast-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.contrast-slider {
+	width: 100%;
+	height: 8px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.2);
+	outline: none;
+	-webkit-appearance: none;
+	appearance: none;
+	cursor: pointer;
+	transition: background 0.3s ease;
+}
+
+.contrast-slider:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.3);
+}
+
+.contrast-slider:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.contrast-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #667eea;
+	cursor: pointer;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	transition: all 0.2s ease;
+}
+
+.contrast-slider::-webkit-slider-thumb:hover:not(:disabled) {
+	background: #5568d3;
+	transform: scale(1.1);
+}
+
+.contrast-slider::-moz-range-thumb {
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #667eea;
+	cursor: pointer;
+	border: none;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	transition: all 0.2s ease;
+}
+
+.contrast-slider::-moz-range-thumb:hover:not(:disabled) {
+	background: #5568d3;
+	transform: scale(1.1);
+}
+
+.contrast-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.contrast-preset-btn {
+	padding: 6px 12px;
+	background: rgba(255, 255, 255, 0.2);
+	color: white;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 500;
+	transition: all 0.3s ease;
+}
+
+.contrast-preset-btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.3);
+	transform: translateY(-1px);
+}
+
+.contrast-preset-btn.active {
+	background: #667eea;
+	border-color: #667eea;
+	font-weight: 600;
+}
+
+.contrast-preset-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.contrast-actions {
+	display: flex;
+	gap: 12px;
+	justify-content: center;
+	margin-top: 20px;
 }
 </style>
