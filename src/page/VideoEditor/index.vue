@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
+import { useRouter } from "vue-router";
 import { VideoEditor } from "./Video";
 
+const router = useRouter();
 const videoUrl = ref<string>("");
 const videoFile = ref<File | null>(null);
 const originalVideoFile = ref<File | null>(null); // 保存原始文件
@@ -12,11 +14,14 @@ const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
 const isFFmpegLoading = ref<boolean>(false);
 const ffmpegLoadProgress = ref<number>(0);
+const ffmpegLoadError = ref<string>("");
 
 // 初始化 VideoEditor
-onMounted(async () => {
+const initFFmpeg = async () => {
 	videoEditor.value = new VideoEditor();
 	isFFmpegLoading.value = true;
+	isFFmpegLoaded.value = false;
+	ffmpegLoadError.value = "";
 	ffmpegLoadProgress.value = 0;
 
 	try {
@@ -40,10 +45,20 @@ onMounted(async () => {
 		}, 500);
 	} catch (error) {
 		console.error("FFmpeg 加载失败:", error);
-		alert("FFmpeg 加载失败，请刷新页面重试");
+		ffmpegLoadError.value = error instanceof Error ? error.message : "未知错误";
 		isFFmpegLoading.value = false;
+		isFFmpegLoaded.value = false;
 	}
+};
+
+onMounted(() => {
+	initFFmpeg();
 });
+
+// 返回首页
+const goToHome = () => {
+	router.push("/");
+};
 
 // 清理资源
 onBeforeUnmount(async () => {
@@ -184,7 +199,34 @@ const downloadVideo = () => {
 			</div>
 		</div>
 
-		<div class="editor-header">
+		<!-- FFmpeg 加载失败页面 -->
+		<div v-else-if="ffmpegLoadError && !isFFmpegLoaded" class="error-overlay">
+			<div class="error-content">
+				<div class="error-icon">❌</div>
+				<h2 class="error-title">FFmpeg 加载失败</h2>
+				<p class="error-message">{{ ffmpegLoadError }}</p>
+				<div class="error-hints">
+					<p>可能的原因：</p>
+					<ul>
+						<li>网络连接不稳定</li>
+						<li>CDN 资源加载失败</li>
+						<li>浏览器不支持 WebAssembly</li>
+					</ul>
+				</div>
+				<div class="error-actions">
+					<button @click="initFFmpeg" class="retry-button">
+						🔄 重新加载
+					</button>
+					<button @click="goToHome" class="back-button">
+						🏠 返回首页
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 主界面（仅在加载成功后显示） -->
+		<template v-if="isFFmpegLoaded">
+			<div class="editor-header">
 			<h1 class="editor-title">视频编辑器</h1>
 			<div v-if="isFFmpegLoaded" class="ffmpeg-status">
 				<span class="status-indicator"></span>
@@ -266,10 +308,11 @@ const downloadVideo = () => {
 			</div>
 		</div>
 
-		<div v-else class="tips">
-			<p>请上传一个视频文件开始编辑</p>
-			<p>支持的格式：MP4, WebM, OGG 等</p>
-		</div>
+			<div v-else class="tips">
+				<p>请上传一个视频文件开始编辑</p>
+				<p>支持的格式：MP4, WebM, OGG 等</p>
+			</div>
+		</template>
 	</div>
 </template>
 
@@ -728,5 +771,146 @@ const downloadVideo = () => {
 	opacity: 0.8;
 	color: white;
 	margin-top: 10px;
+}
+
+/* FFmpeg 加载失败页面样式 */
+.error-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
+}
+
+.error-content {
+	text-align: center;
+	padding: 40px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 20px;
+	backdrop-filter: blur(10px);
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+	max-width: 600px;
+	width: 90%;
+}
+
+.error-icon {
+	font-size: 4rem;
+	margin-bottom: 20px;
+	animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+	0%, 100% {
+		transform: translateX(0);
+	}
+	25% {
+		transform: translateX(-10px);
+	}
+	75% {
+		transform: translateX(10px);
+	}
+}
+
+.error-title {
+	font-size: 2rem;
+	font-weight: bold;
+	margin-bottom: 20px;
+	color: white;
+}
+
+.error-message {
+	font-size: 1.1rem;
+	margin-bottom: 20px;
+	color: rgba(255, 255, 255, 0.9);
+	padding: 15px;
+	background: rgba(255, 107, 107, 0.2);
+	border-radius: 8px;
+	border: 1px solid rgba(255, 107, 107, 0.3);
+}
+
+.error-hints {
+	text-align: left;
+	margin: 20px 0;
+	padding: 20px;
+	background: rgba(255, 255, 255, 0.05);
+	border-radius: 10px;
+	color: white;
+}
+
+.error-hints p {
+	font-weight: 600;
+	margin-bottom: 10px;
+	font-size: 1rem;
+}
+
+.error-hints ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.error-hints li {
+	padding: 8px 0;
+	padding-left: 25px;
+	position: relative;
+	opacity: 0.9;
+	font-size: 0.95rem;
+}
+
+.error-hints li::before {
+	content: "•";
+	position: absolute;
+	left: 10px;
+	color: #ffd700;
+	font-weight: bold;
+}
+
+.error-actions {
+	display: flex;
+	gap: 15px;
+	justify-content: center;
+	margin-top: 30px;
+}
+
+.retry-button,
+.back-button {
+	padding: 14px 28px;
+	border: none;
+	border-radius: 10px;
+	cursor: pointer;
+	font-size: 16px;
+	font-weight: 600;
+	transition: all 0.3s ease;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.retry-button {
+	background: #4caf50;
+	color: white;
+	flex: 1;
+}
+
+.retry-button:hover {
+	background: #45a049;
+	transform: translateY(-2px);
+	box-shadow: 0 6px 12px rgba(76, 175, 80, 0.3);
+}
+
+.back-button {
+	background: rgba(255, 255, 255, 0.2);
+	color: white;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	flex: 1;
+}
+
+.back-button:hover {
+	background: rgba(255, 255, 255, 0.3);
+	transform: translateY(-2px);
+	box-shadow: 0 6px 12px rgba(255, 255, 255, 0.2);
 }
 </style>
