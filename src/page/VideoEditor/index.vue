@@ -12,6 +12,8 @@ const videoEditor = ref<VideoEditor | null>(null);
 const videoElement = ref<HTMLVideoElement | null>(null); // 视频 DOM 元素
 const speed = ref<number>(1.0); // 倍速值，默认 1.0
 const contrast = ref<number>(1.0); // 对比度值，默认 1.0
+const appliedSpeed = ref<number>(1.0); // 已应用的倍速值
+const appliedContrast = ref<number>(1.0); // 已应用的对比度值
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
@@ -86,6 +88,8 @@ const handleVideoUpload = (event: Event) => {
 	originalVideoFile.value = file; // 保存原始文件
 	speed.value = 1.0; // 重置倍速
 	contrast.value = 1.0; // 重置对比度
+	appliedSpeed.value = 1.0; // 重置已应用的倍速
+	appliedContrast.value = 1.0; // 重置已应用的对比度
 	processingProgress.value = 0;
 
 	// 创建视频 URL 用于预览
@@ -104,6 +108,8 @@ const clearVideo = () => {
 	originalVideoFile.value = null;
 	speed.value = 1.0;
 	contrast.value = 1.0;
+	appliedSpeed.value = 1.0;
+	appliedContrast.value = 1.0;
 	processingProgress.value = 0;
 	// 重置文件输入
 	const fileInput = document.getElementById("video-input") as HTMLInputElement;
@@ -112,7 +118,7 @@ const clearVideo = () => {
 	}
 };
 
-// 应用倍速处理
+// 应用倍速处理（会同时应用对比度，保留已应用的对比度）
 const applySpeed = async () => {
 	if (!videoEditor.value || !originalVideoFile.value) {
 		alert("请先上传视频文件");
@@ -129,14 +135,22 @@ const applySpeed = async () => {
 		return;
 	}
 
-	if (speed.value === 1.0) {
-		// 如果倍速为 1.0，恢复原始视频
+	// 确定要应用的倍速和对比度值
+	// 倍速使用当前滑块值，对比度保留已应用的值
+	const speedToApply = speed.value;
+	const contrastToApply = appliedContrast.value;
+
+	// 如果倍速和对比度都是默认值，恢复原始视频
+	if (speedToApply === 1.0 && contrastToApply === 1.0) {
 		const reader = new FileReader();
 		reader.onload = (e) => {
 			const result = e.target?.result as string;
 			videoUrl.value = result;
 		};
 		reader.readAsDataURL(originalVideoFile.value);
+		videoFile.value = originalVideoFile.value;
+		appliedSpeed.value = 1.0;
+		appliedContrast.value = 1.0;
 		return;
 	}
 
@@ -144,10 +158,13 @@ const applySpeed = async () => {
 		isProcessing.value = true;
 		processingProgress.value = 0;
 
-		// 使用带进度的倍速处理
-		const outputBlob = await videoEditor.value.changeSpeedWithProgress(
+		// 使用 applyFilters 同时应用倍速和对比度
+		const outputBlob = await videoEditor.value.applyFilters(
 			originalVideoFile.value,
-			speed.value,
+			{
+				speed: speedToApply,
+				contrast: contrastToApply,
+			},
 			(progress) => {
 				processingProgress.value = progress;
 			}
@@ -158,12 +175,22 @@ const applySpeed = async () => {
 		videoUrl.value = newVideoUrl;
 
 		// 更新 videoFile 为处理后的文件
-		const newFile = new File([outputBlob], `speed_${speed.value}x_${originalVideoFile.value.name}`, {
-			type: "video/mp4",
-		});
+		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
+		const newFile = new File(
+			[outputBlob],
+			`${fileName}_speed${speedToApply}_contrast${contrastToApply.toFixed(2)}.mp4`,
+			{ type: "video/mp4" }
+		);
 		videoFile.value = newFile;
 
-		alert(`视频已成功调整为 ${speed.value}x 倍速！`);
+		// 更新已应用的值
+		appliedSpeed.value = speedToApply;
+		appliedContrast.value = contrastToApply;
+
+		const effects = [];
+		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
+		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
+		alert(`视频已成功应用：${effects.join(" + ")}！`);
 	} catch (error) {
 		console.error("视频处理失败:", error);
 		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -173,7 +200,7 @@ const applySpeed = async () => {
 	}
 };
 
-// 应用对比度处理
+// 应用对比度处理（会同时应用倍速，保留已应用的倍速）
 const applyContrast = async () => {
 	if (!videoEditor.value || !originalVideoFile.value) {
 		alert("请先上传视频文件");
@@ -190,14 +217,22 @@ const applyContrast = async () => {
 		return;
 	}
 
-	if (contrast.value === 1.0) {
-		// 如果对比度为 1.0，恢复原始视频
+	// 确定要应用的倍速和对比度值
+	// 对比度使用当前滑块值，倍速保留已应用的值
+	const speedToApply = appliedSpeed.value;
+	const contrastToApply = contrast.value;
+
+	// 如果倍速和对比度都是默认值，恢复原始视频
+	if (speedToApply === 1.0 && contrastToApply === 1.0) {
 		const reader = new FileReader();
 		reader.onload = (e) => {
 			const result = e.target?.result as string;
 			videoUrl.value = result;
 		};
 		reader.readAsDataURL(originalVideoFile.value);
+		videoFile.value = originalVideoFile.value;
+		appliedSpeed.value = 1.0;
+		appliedContrast.value = 1.0;
 		return;
 	}
 
@@ -205,10 +240,13 @@ const applyContrast = async () => {
 		isProcessing.value = true;
 		processingProgress.value = 0;
 
-		// 使用带进度的对比度处理
-		const outputBlob = await videoEditor.value.changeContrastWithProgress(
+		// 使用 applyFilters 同时应用倍速和对比度
+		const outputBlob = await videoEditor.value.applyFilters(
 			originalVideoFile.value,
-			contrast.value,
+			{
+				speed: speedToApply,
+				contrast: contrastToApply,
+			},
 			(progress) => {
 				processingProgress.value = progress;
 			}
@@ -219,12 +257,22 @@ const applyContrast = async () => {
 		videoUrl.value = newVideoUrl;
 
 		// 更新 videoFile 为处理后的文件
-		const newFile = new File([outputBlob], `contrast_${contrast.value}_${originalVideoFile.value.name}`, {
-			type: "video/mp4",
-		});
+		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
+		const newFile = new File(
+			[outputBlob],
+			`${fileName}_speed${speedToApply}_contrast${contrastToApply.toFixed(2)}.mp4`,
+			{ type: "video/mp4" }
+		);
 		videoFile.value = newFile;
 
-		alert(`视频已成功调整对比度为 ${contrast.value.toFixed(2)}！`);
+		// 更新已应用的值
+		appliedSpeed.value = speedToApply;
+		appliedContrast.value = contrastToApply;
+
+		const effects = [];
+		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
+		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
+		alert(`视频已成功应用：${effects.join(" + ")}！`);
 	} catch (error) {
 		console.error("视频处理失败:", error);
 		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);

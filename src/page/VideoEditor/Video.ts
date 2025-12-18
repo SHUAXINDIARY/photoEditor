@@ -375,6 +375,156 @@ export class VideoEditor {
   }
 
   /**
+   * 应用多个视频滤镜（倍速和对比度可以叠加）
+   * @param inputFile 输入视频文件
+   * @param options 滤镜选项
+   * @param options.speed 倍速值（可选，默认 1.0）
+   * @param options.contrast 对比度值（可选，默认 1.0）
+   * @param onProgress 进度回调函数 (0-100)
+   * @returns 处理后的视频 Blob
+   */
+  async applyFilters(
+    inputFile: File,
+    options: { speed?: number; contrast?: number } = {},
+    onProgress?: (progress: number) => void
+  ): Promise<Blob> {
+    if (!this.isLoaded) {
+      await this.load();
+    }
+
+    // 确保 FFmpeg 完全加载
+    if (!this.ffmpeg.loaded) {
+      throw new Error("FFmpeg 未正确加载，请稍后重试");
+    }
+
+    const speed = options.speed ?? 1.0;
+    const contrast = options.contrast ?? 1.0;
+
+    if (speed <= 0) {
+      throw new Error("倍速值必须大于 0");
+    }
+
+    if (contrast <= 0) {
+      throw new Error("对比度值必须大于 0");
+    }
+
+    // 使用时间戳生成唯一文件名，避免文件冲突
+    const timestamp = Date.now();
+    const inputFileName = `input_${timestamp}.mp4`;
+    const outputFileName = `output_${timestamp}.mp4`;
+
+    // 设置进度回调
+    const previousCallback = this.currentProgressCallback;
+    this.currentProgressCallback = onProgress || null;
+
+    try {
+      // 将输入文件写入 FFmpeg 文件系统
+      console.log("[FFmpeg] 开始读取输入文件...");
+      const fileData = await fetchFile(inputFile);
+
+      if (!fileData) {
+        throw new Error("无法读取输入文件");
+      }
+
+      console.log("[FFmpeg] 文件数据大小:", fileData instanceof Uint8Array ? fileData.length : "未知");
+
+      // 写入文件到 FFmpeg 虚拟文件系统
+      console.log("[FFmpeg] 写入文件到虚拟文件系统:", inputFileName);
+      await this.ffmpeg.writeFile(inputFileName, fileData);
+      console.log("[FFmpeg] 文件写入成功");
+
+      // 构建滤镜链
+      // 注意：先应用图像处理（对比度），再应用时间处理（倍速）
+      const filters: string[] = [];
+
+      // 如果对比度不为 1.0，添加对比度滤镜
+      if (contrast !== 1.0) {
+        filters.push(`eq=contrast=${contrast}`);
+      }
+
+      // 如果倍速不为 1.0，添加倍速滤镜
+      if (speed !== 1.0) {
+        filters.push(`setpts=${1 / speed}*PTS`);
+      }
+
+      // 构建 FFmpeg 命令
+      const ffmpegArgs: string[] = ["-i", inputFileName];
+
+      // 如果有滤镜，应用它们
+      if (filters.length > 0) {
+        const filterComplex = filters.join(",");
+        ffmpegArgs.push("-vf", filterComplex);
+      }
+
+      // 移除音频轨道并设置编码参数
+      ffmpegArgs.push("-an", "-c:v", "libx264", "-preset", "ultrafast", outputFileName);
+
+      console.log("[FFmpeg] 开始执行 FFmpeg 命令，倍速:", speed, "对比度:", contrast);
+      await this.ffmpeg.exec(ffmpegArgs);
+
+      // 读取输出文件
+      console.log("[FFmpeg] 读取输出文件:", outputFileName);
+      const data = (await this.ffmpeg.readFile(outputFileName)) as Uint8Array;
+      console.log("[FFmpeg] 输出文件读取成功，大小:", data.length);
+
+      // 转换为 Blob
+      const arrayBuffer = new ArrayBuffer(data.length);
+      const view = new Uint8Array(arrayBuffer);
+      view.set(data);
+      const resultBlob = new Blob([arrayBuffer], { type: "video/mp4" });
+
+      // 清理文件
+      try {
+        await this.ffmpeg.deleteFile(inputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输入文件失败:", cleanupError);
+      }
+      try {
+        await this.ffmpeg.deleteFile(outputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输出文件失败:", cleanupError);
+      }
+
+      return resultBlob;
+
+    } catch (error) {
+      console.error("[FFmpeg] 视频处理失败:", error);
+      console.error("[FFmpeg] 错误详情:", {
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        ffmpegLoaded: this.ffmpeg.loaded,
+        isLoaded: this.isLoaded,
+      });
+
+      // 确保在错误时也清理文件
+      try {
+        await this.ffmpeg.deleteFile(inputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输入文件失败:", cleanupError);
+      }
+      try {
+        await this.ffmpeg.deleteFile(outputFileName);
+      } catch (cleanupError) {
+        console.warn("[FFmpeg] 清理输出文件失败:", cleanupError);
+      }
+
+      // 提供更详细的错误信息
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("FS error") || errorMessage.includes("ErrnoError")) {
+        throw new Error(
+          `FFmpeg 文件系统错误。可能的原因：1) FFmpeg 未完全加载 2) 文件系统未初始化 3) 文件操作冲突。原始错误: ${errorMessage}`
+        );
+      }
+
+      throw new Error(`视频处理失败: ${errorMessage}`);
+    } finally {
+      // 恢复之前的回调
+      this.currentProgressCallback = previousCallback;
+    }
+  }
+
+  /**
    * 销毁 FFmpeg 实例
    */
   async destroy(): Promise<void> {
