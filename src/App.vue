@@ -10,18 +10,15 @@ const route = useRoute();
 			<div class="nav-container">
 				<div class="nav-brand">图片编辑器</div>
 				<div class="nav-links">
-					<router-link 
-						to="/photo-editor" 
-						class="nav-link"
-						:class="{ active: route.name === 'PhotoEditor' }"
-					>
+					<!-- 查看仓库按钮 -->
+					<a class="nav-link" href="https://github.com/SHUAXINDIARY/photoEditor" target="_blank"
+						rel="noopener noreferrer">
+						查看仓库
+					</a>
+					<router-link to="/photo-editor" class="nav-link" :class="{ active: route.name === 'PhotoEditor' }">
 						图片编辑
 					</router-link>
-					<router-link 
-						to="/video-editor" 
-						class="nav-link"
-						:class="{ active: route.name === 'VideoEditor' }"
-					>
+					<router-link to="/video-editor" class="nav-link" :class="{ active: route.name === 'VideoEditor' }">
 						视频编辑
 					</router-link>
 				</div>

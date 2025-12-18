@@ -513,15 +513,6 @@ const max = 100;
 		<div class="upload-section">
 			<div class="title">图片编辑器</div>
 			<div class="upload-area">
-				<!-- 查看仓库按钮 -->
-				<a 
-					href="https://github.com/SHUAXINDIARY/photoEditor" 
-					target="_blank" 
-					rel="noopener noreferrer"
-					class="upload-button repo-button"
-				>
-					查看仓库
-				</a>
 				<input type="file" accept="image/*" @change="handleFileUpload" id="file-input" class="file-input" />
 				<label for="file-input" class="upload-button">
 					选择图片上传
