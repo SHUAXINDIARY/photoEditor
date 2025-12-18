@@ -247,69 +247,77 @@ const downloadVideo = () => {
 			</div>
 
 			<div v-if="videoUrl" class="video-preview-section">
-				<!-- 倍速控制面板 -->
-				<div class="speed-control-panel">
-					<div class="speed-control-item">
-						<label class="speed-label">
-							<span>倍速：</span>
-							<span class="speed-value">{{ speed.toFixed(2) }}x</span>
-						</label>
-						<div class="speed-controls">
-							<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed"
-								class="speed-slider" :disabled="isProcessing || !isFFmpegLoaded" />
-							<div class="speed-presets">
-								<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
-									@click="speed = preset" class="speed-preset-btn"
-									:class="{ active: speed === preset }" :disabled="isProcessing || !isFFmpegLoaded">
-									{{ preset }}x
-								</button>
+				<!-- 左侧控制面板 -->
+				<div class="left-panel">
+					<!-- 倍速控制面板 -->
+					<div class="speed-control-panel">
+						<div class="speed-control-item">
+							<label class="speed-label">
+								<span>倍速：</span>
+								<span class="speed-value">{{ speed.toFixed(2) }}x</span>
+							</label>
+							<div class="speed-controls">
+								<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed"
+									class="speed-slider" :disabled="isProcessing || !isFFmpegLoaded" />
+								<div class="speed-presets">
+									<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
+										@click="speed = preset" class="speed-preset-btn"
+										:class="{ active: speed === preset }" :disabled="isProcessing || !isFFmpegLoaded">
+										{{ preset }}x
+									</button>
+								</div>
 							</div>
 						</div>
-					</div>
-					<div class="speed-actions">
-						<button @click="applySpeed" class="apply-button"
-							:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
-							{{ isProcessing ? "处理中..." : "应用倍速" }}
-						</button>
-						<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
-							:disabled="isProcessing">
-							下载视频
-						</button>
-					</div>
-					<!-- 处理进度 -->
-					<div v-if="isProcessing" class="progress-container">
-						<div class="progress-bar">
-							<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
+						<div class="speed-actions">
+							<button @click="applySpeed" class="apply-button"
+								:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
+								{{ isProcessing ? "处理中..." : "应用倍速" }}
+							</button>
+							<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
+								:disabled="isProcessing">
+								下载视频
+							</button>
 						</div>
-						<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+						<!-- 处理进度 -->
+						<div v-if="isProcessing" class="progress-container">
+							<div class="progress-bar">
+								<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
+							</div>
+							<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+						</div>
+					</div>
+
+					<!-- 视频信息 -->
+					<div v-if="videoFile" class="video-info">
+						<p class="info-item">
+							<span class="info-label">文件名：</span>
+							<span class="info-value">{{ videoFile.name }}</span>
+						</p>
+						<p class="info-item">
+							<span class="info-label">文件大小：</span>
+							<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
+						</p>
+						<p class="info-item">
+							<span class="info-label">文件类型：</span>
+							<span class="info-value">{{ videoFile.type }}</span>
+						</p>
+						<p v-if="speed !== 1.0" class="info-item">
+							<span class="info-label">当前倍速：</span>
+							<span class="info-value">{{ speed.toFixed(2) }}x</span>
+						</p>
 					</div>
 				</div>
 
-				<div class="video-wrapper">
-					<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview">
-						您的浏览器不支持视频播放
-					</video>
-				</div>
+				<!-- 右侧视频区域 -->
+				<div class="right-panel">
+					<div class="video-wrapper">
+						<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview">
+							您的浏览器不支持视频播放
+						</video>
+					</div>
 
-				<!-- 时间轴组件 -->
-				<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" />
-				<div v-if="videoFile" class="video-info">
-					<p class="info-item">
-						<span class="info-label">文件名：</span>
-						<span class="info-value">{{ videoFile.name }}</span>
-					</p>
-					<p class="info-item">
-						<span class="info-label">文件大小：</span>
-						<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
-					</p>
-					<p class="info-item">
-						<span class="info-label">文件类型：</span>
-						<span class="info-value">{{ videoFile.type }}</span>
-					</p>
-					<p v-if="speed !== 1.0" class="info-item">
-						<span class="info-label">当前倍速：</span>
-						<span class="info-value">{{ speed.toFixed(2) }}x</span>
-					</p>
+					<!-- 时间轴组件 -->
+					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" />
 				</div>
 			</div>
 
@@ -433,34 +441,52 @@ const downloadVideo = () => {
 
 .video-preview-section {
 	width: 100%;
-	max-width: 1200px;
+	max-width: 1400px;
+	display: flex;
+	flex-direction: row;
+	gap: 20px;
+	align-items: flex-start;
+}
+
+/* 左侧控制面板 */
+.left-panel {
+	flex: 0 0 320px;
 	display: flex;
 	flex-direction: column;
-	align-items: center;
 	gap: 20px;
+}
+
+/* 右侧视频区域 */
+.right-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	min-width: 0;
 }
 
 .video-wrapper {
 	width: 100%;
-	height: 50vh;
-	max-width: 100%;
 	background: rgba(0, 0, 0, 0.3);
 	border-radius: 12px;
 	padding: 20px;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
 .video-preview {
 	width: 100%;
 	max-width: 100%;
-	height: 100%;
+	max-height: 70vh;
+	height: auto;
 	border-radius: 8px;
 	background: #000;
 	object-fit: contain;
 }
 
 .video-info {
-	width: 100%;
 	background: rgba(255, 255, 255, 0.1);
 	border-radius: 12px;
 	padding: 20px;
@@ -500,12 +526,10 @@ const downloadVideo = () => {
 }
 
 .speed-control-panel {
-	width: 100%;
 	background: rgba(255, 255, 255, 0.1);
 	border-radius: 12px;
 	padding: 20px;
 	backdrop-filter: blur(10px);
-	margin-bottom: 20px;
 }
 
 .speed-control-item {
@@ -591,7 +615,6 @@ const downloadVideo = () => {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
-	justify-content: center;
 }
 
 .speed-preset-btn {
@@ -924,5 +947,48 @@ const downloadVideo = () => {
 	background: rgba(255, 255, 255, 0.3);
 	transform: translateY(-2px);
 	box-shadow: 0 6px 12px rgba(255, 255, 255, 0.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+	.video-preview-section {
+		flex-direction: column;
+		max-width: 100%;
+	}
+
+	.left-panel {
+		flex: 1;
+		width: 100%;
+	}
+
+	.right-panel {
+		width: 100%;
+	}
+
+	.video-preview {
+		max-height: 60vh;
+	}
+}
+
+@media (max-width: 768px) {
+	.video-preview-section {
+		gap: 16px;
+	}
+
+	.left-panel {
+		flex: 1;
+	}
+
+	.speed-control-panel {
+		padding: 16px;
+	}
+
+	.video-wrapper {
+		padding: 12px;
+	}
+
+	.video-preview {
+		max-height: 50vh;
+	}
 }
 </style>
