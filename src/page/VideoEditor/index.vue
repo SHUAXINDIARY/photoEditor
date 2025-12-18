@@ -2,12 +2,14 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { VideoEditor } from "./Video";
+import TimeLine from "../../components/TimeLine.vue";
 
 const router = useRouter();
 const videoUrl = ref<string>("");
 const videoFile = ref<File | null>(null);
 const originalVideoFile = ref<File | null>(null); // 保存原始文件
 const videoEditor = ref<VideoEditor | null>(null);
+const videoElement = ref<HTMLVideoElement | null>(null); // 视频 DOM 元素
 const speed = ref<number>(1.0); // 倍速值，默认 1.0
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
@@ -227,86 +229,89 @@ const downloadVideo = () => {
 		<!-- 主界面（仅在加载成功后显示） -->
 		<template v-if="isFFmpegLoaded">
 			<div class="editor-header">
-			<h1 class="editor-title">视频编辑器</h1>
-			<div v-if="isFFmpegLoaded" class="ffmpeg-status">
-				<span class="status-indicator"></span>
-				<span class="status-text">FFmpeg 已就绪</span>
+				<h1 class="editor-title">视频编辑器</h1>
+				<div v-if="isFFmpegLoaded" class="ffmpeg-status">
+					<span class="status-indicator"></span>
+					<span class="status-text">FFmpeg 已就绪</span>
+				</div>
 			</div>
-		</div>
 
-		<div class="upload-section">
-			<input type="file" accept="video/*" @change="handleVideoUpload" id="video-input" class="file-input" />
-			<label for="video-input" class="upload-button">
-				{{ videoUrl ? "重新选择视频" : "选择视频上传" }}
-			</label>
-			<button v-if="videoUrl" @click="clearVideo" class="clear-button">
-				清除视频
-			</button>
-		</div>
+			<div class="upload-section">
+				<input type="file" accept="video/*" @change="handleVideoUpload" id="video-input" class="file-input" />
+				<label for="video-input" class="upload-button">
+					{{ videoUrl ? "重新选择视频" : "选择视频上传" }}
+				</label>
+				<button v-if="videoUrl" @click="clearVideo" class="clear-button">
+					清除视频
+				</button>
+			</div>
 
-		<div v-if="videoUrl" class="video-preview-section">
-			<!-- 倍速控制面板 -->
-			<div class="speed-control-panel">
-				<div class="speed-control-item">
-					<label class="speed-label">
-						<span>倍速：</span>
-						<span class="speed-value">{{ speed.toFixed(2) }}x</span>
-					</label>
-					<div class="speed-controls">
-						<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed" class="speed-slider"
-							:disabled="isProcessing || !isFFmpegLoaded" />
-						<div class="speed-presets">
-							<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
-								@click="speed = preset" class="speed-preset-btn" :class="{ active: speed === preset }"
-								:disabled="isProcessing || !isFFmpegLoaded">
-								{{ preset }}x
-							</button>
+			<div v-if="videoUrl" class="video-preview-section">
+				<!-- 倍速控制面板 -->
+				<div class="speed-control-panel">
+					<div class="speed-control-item">
+						<label class="speed-label">
+							<span>倍速：</span>
+							<span class="speed-value">{{ speed.toFixed(2) }}x</span>
+						</label>
+						<div class="speed-controls">
+							<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed"
+								class="speed-slider" :disabled="isProcessing || !isFFmpegLoaded" />
+							<div class="speed-presets">
+								<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
+									@click="speed = preset" class="speed-preset-btn"
+									:class="{ active: speed === preset }" :disabled="isProcessing || !isFFmpegLoaded">
+									{{ preset }}x
+								</button>
+							</div>
 						</div>
 					</div>
-				</div>
-				<div class="speed-actions">
-					<button @click="applySpeed" class="apply-button"
-						:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
-						{{ isProcessing ? "处理中..." : "应用倍速" }}
-					</button>
-					<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
-						:disabled="isProcessing">
-						下载视频
-					</button>
-				</div>
-				<!-- 处理进度 -->
-				<div v-if="isProcessing" class="progress-container">
-					<div class="progress-bar">
-						<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
+					<div class="speed-actions">
+						<button @click="applySpeed" class="apply-button"
+							:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
+							{{ isProcessing ? "处理中..." : "应用倍速" }}
+						</button>
+						<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
+							:disabled="isProcessing">
+							下载视频
+						</button>
 					</div>
-					<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+					<!-- 处理进度 -->
+					<div v-if="isProcessing" class="progress-container">
+						<div class="progress-bar">
+							<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
+						</div>
+						<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+					</div>
+				</div>
+
+				<div class="video-wrapper">
+					<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview">
+						您的浏览器不支持视频播放
+					</video>
+				</div>
+
+				<!-- 时间轴组件 -->
+				<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" />
+				<div v-if="videoFile" class="video-info">
+					<p class="info-item">
+						<span class="info-label">文件名：</span>
+						<span class="info-value">{{ videoFile.name }}</span>
+					</p>
+					<p class="info-item">
+						<span class="info-label">文件大小：</span>
+						<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
+					</p>
+					<p class="info-item">
+						<span class="info-label">文件类型：</span>
+						<span class="info-value">{{ videoFile.type }}</span>
+					</p>
+					<p v-if="speed !== 1.0" class="info-item">
+						<span class="info-label">当前倍速：</span>
+						<span class="info-value">{{ speed.toFixed(2) }}x</span>
+					</p>
 				</div>
 			</div>
-
-			<div class="video-wrapper">
-				<video :src="videoUrl" controls class="video-preview">
-					您的浏览器不支持视频播放
-				</video>
-			</div>
-			<div v-if="videoFile" class="video-info">
-				<p class="info-item">
-					<span class="info-label">文件名：</span>
-					<span class="info-value">{{ videoFile.name }}</span>
-				</p>
-				<p class="info-item">
-					<span class="info-label">文件大小：</span>
-					<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
-				</p>
-				<p class="info-item">
-					<span class="info-label">文件类型：</span>
-					<span class="info-value">{{ videoFile.type }}</span>
-				</p>
-				<p v-if="speed !== 1.0" class="info-item">
-					<span class="info-label">当前倍速：</span>
-					<span class="info-value">{{ speed.toFixed(2) }}x</span>
-				</p>
-			</div>
-		</div>
 
 			<div v-else class="tips">
 				<p>请上传一个视频文件开始编辑</p>
@@ -359,10 +364,13 @@ const downloadVideo = () => {
 }
 
 @keyframes pulse {
-	0%, 100% {
+
+	0%,
+	100% {
 		opacity: 1;
 		transform: scale(1);
 	}
+
 	50% {
 		opacity: 0.6;
 		transform: scale(1.1);
@@ -434,6 +442,7 @@ const downloadVideo = () => {
 
 .video-wrapper {
 	width: 100%;
+	height: 50vh;
 	max-width: 100%;
 	background: rgba(0, 0, 0, 0.3);
 	border-radius: 12px;
@@ -444,8 +453,7 @@ const downloadVideo = () => {
 .video-preview {
 	width: 100%;
 	max-width: 100%;
-	max-height: 90vh;
-	height: auto;
+	height: 100%;
 	border-radius: 8px;
 	background: #000;
 	object-fit: contain;
@@ -805,12 +813,16 @@ const downloadVideo = () => {
 }
 
 @keyframes shake {
-	0%, 100% {
+
+	0%,
+	100% {
 		transform: translateX(0);
 	}
+
 	25% {
 		transform: translateX(-10px);
 	}
+
 	75% {
 		transform: translateX(10px);
 	}
