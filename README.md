@@ -1,6 +1,6 @@
 ## 项目简介
 
-这是一个基于 **Vue 3 + TypeScript + Rspack** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
+这是一个基于 **Vue 3 + TypeScript + Rspack/Vite** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
 
 - **图片编辑器**：使用 **Konva** 实现，支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
 - **视频编辑器**：使用 **FFmpeg.wasm** 实现，支持视频倍速调整、对比度调节，效果可叠加使用，并提供实时进度显示和视频预览功能。
@@ -300,6 +300,8 @@ this.filterManager = new ImageFilterManager();
 
 ## 本地开发与构建
 
+> ffmpeg.wasm 由于默认开启多线程加载，Rspack中不支持通过URL初始化worker，所以使用vite启动才能正常跑
+
 ### 安装依赖
 
 ```bash
@@ -309,7 +311,11 @@ pnpm install
 ### 启动开发服务器
 
 ```bash
+# rspack
 pnpm run dev
+
+# vite
+pnpm run dev:vite
 ```
 
 默认访问地址：`http://localhost:8080`
@@ -317,7 +323,12 @@ pnpm run dev
 ### 生产构建
 
 ```bash
+# rspack
 pnpm run build
+
+# vite
+pnpm run build:vite
+
 ```
 
 ### 本地预览生产构建
