@@ -626,27 +626,23 @@ export class WebAVWrapper {
       console.log("[WebAV] 开始应用滤镜，倍速:", speed, "对比度:", contrast);
       this.updateProgress(5);
 
-      // 读取视频文件（只读取一次，复用 buffer）
+      // 读取视频文件
       const videoBuffer = await inputFile.arrayBuffer();
       const videoData = new Uint8Array(videoBuffer);
       
-      // 创建用于读取源帧的 clip
-      const sourceClip = new MP4Clip(new ReadableStream({
+      // 创建 MP4Clip
+      const clip = new MP4Clip(new ReadableStream({
         start(controller) {
-          controller.enqueue(videoData.slice()); // 使用 slice 避免 detached
+          controller.enqueue(videoData.slice());
           controller.close();
         },
       }));
-      await sourceClip.ready;
+      await clip.ready;
       this.updateProgress(10);
 
-      const meta = sourceClip.meta;
+      const meta = clip.meta;
       const { width, height, duration: originalDurationUs } = meta;
       const newDurationUs = originalDurationUs / speed;
-      
-      const fps = 30;
-      const frameIntervalUs = 1_000_000 / fps;
-      const totalOutputFrames = Math.ceil(newDurationUs / frameIntervalUs);
 
       console.log("[WebAV] 视频信息:", {
         width,
@@ -655,7 +651,6 @@ export class WebAVWrapper {
         newDurationSec: newDurationUs / 1e6,
         speed,
         contrast,
-        totalOutputFrames,
       });
 
       this.updateProgress(15);
@@ -664,151 +659,99 @@ export class WebAVWrapper {
       const glRenderer = new WebGLContrastRenderer(width, height);
       const useWebGL = glRenderer.init();
       
-      // 创建 2D Canvas 用于绘制帧和回退处理
+      // 创建 2D Canvas 用于 CPU 回退
       const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext("2d", { 
-        willReadFrequently: true,
-        alpha: false,
-      });
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) {
         throw new Error("无法创建 Canvas 上下文");
       }
 
-      // CPU 回退：预计算对比度 LUT（查找表）
-      let contrastLUT: Uint8ClampedArray | null = null;
-      if (!useWebGL) {
-        contrastLUT = new Uint8ClampedArray(256);
-        const factor = contrast;
-        for (let i = 0; i < 256; i++) {
-          contrastLUT[i] = Math.max(0, Math.min(255, (i - 128) * factor + 128));
-        }
+      // CPU 回退：预计算对比度 LUT
+      const contrastLUT = new Uint8ClampedArray(256);
+      for (let i = 0; i < 256; i++) {
+        contrastLUT[i] = Math.max(0, Math.min(255, (i - 128) * contrast + 128));
       }
 
-      // 性能优化：预分配帧数据数组
-      const frameBuffers: Uint8ClampedArray[] = new Array(totalOutputFrames);
-      let actualFrameCount = 0;
-
-      // CPU 回退：使用 LUT 快速应用对比度
+      // CPU 对比度处理函数
       const applyContrastCPU = (data: Uint8ClampedArray) => {
-        if (!contrastLUT) return;
         const len = data.length;
-        for (let i = 0; i < len; i += 16) {
+        for (let i = 0; i < len; i += 4) {
           data[i] = contrastLUT[data[i]];
           data[i + 1] = contrastLUT[data[i + 1]];
           data[i + 2] = contrastLUT[data[i + 2]];
-          
-          data[i + 4] = contrastLUT[data[i + 4]];
-          data[i + 5] = contrastLUT[data[i + 5]];
-          data[i + 6] = contrastLUT[data[i + 6]];
-          
-          data[i + 8] = contrastLUT[data[i + 8]];
-          data[i + 9] = contrastLUT[data[i + 9]];
-          data[i + 10] = contrastLUT[data[i + 10]];
-          
-          data[i + 12] = contrastLUT[data[i + 12]];
-          data[i + 13] = contrastLUT[data[i + 13]];
-          data[i + 14] = contrastLUT[data[i + 14]];
         }
       };
 
       console.log(`[WebAV] 使用 ${useWebGL ? 'WebGL 硬件加速' : 'CPU'} 处理对比度`);
 
-      // 批量提取帧，减少进度更新频率
-      const progressUpdateInterval = Math.max(1, Math.floor(totalOutputFrames / 20));
-      
-      for (let i = 0; i < totalOutputFrames; i++) {
-        const sourceTimeUs = Math.round(i * frameIntervalUs * speed);
-        
-        if (sourceTimeUs >= originalDurationUs) break;
+      // 帧计数用于进度更新
+      let frameCount = 0;
+      const estimatedFrames = Math.ceil(originalDurationUs / (1_000_000 / 30));
 
-        const { state, video } = await sourceClip.tick(sourceTimeUs);
-        
-        if (state === "done") break;
-        
-        if (video != null && state === "success") {
-          let processedPixels: Uint8ClampedArray | null = null;
+      // 使用 WebAV 的 tickInterceptor 直接处理每一帧
+      // 这种方式更简洁，不需要预先提取所有帧
+      clip.tickInterceptor = async (_, tickRet) => {
+        if (tickRet.video) {
+          let newFrame: VideoFrame;
+          const originalTimestamp = tickRet.video.timestamp;
+          const originalDuration = tickRet.video.duration;
 
           if (useWebGL) {
-            // WebGL 硬件加速处理
-            processedPixels = glRenderer.processFrame(video, contrast);
-            video.close();
-          }
-          
-          if (!processedPixels) {
-            // CPU 回退处理
-            ctx.drawImage(video, 0, 0, video.codedWidth, video.codedHeight, 0, 0, width, height);
-            if (video.close) video.close();
-            
+            // WebGL 硬件加速
+            const processedPixels = glRenderer.processFrame(tickRet.video, contrast);
+            if (processedPixels) {
+              // 创建 ImageData 并复制像素数据
+              const imageData = ctx.createImageData(width, height);
+              imageData.data.set(processedPixels);
+              ctx.putImageData(imageData, 0, 0);
+              newFrame = new VideoFrame(canvas, {
+                timestamp: originalTimestamp / speed,
+                duration: originalDuration ? originalDuration / speed : undefined,
+              });
+            } else {
+              // WebGL 失败，回退到 CPU
+              ctx.drawImage(tickRet.video, 0, 0);
+              const imageData = ctx.getImageData(0, 0, width, height);
+              applyContrastCPU(imageData.data);
+              ctx.putImageData(imageData, 0, 0);
+              newFrame = new VideoFrame(canvas, {
+                timestamp: originalTimestamp / speed,
+                duration: originalDuration ? originalDuration / speed : undefined,
+              });
+            }
+          } else {
+            // CPU 处理
+            ctx.drawImage(tickRet.video, 0, 0);
             const imageData = ctx.getImageData(0, 0, width, height);
             applyContrastCPU(imageData.data);
-            processedPixels = new Uint8ClampedArray(imageData.data);
+            ctx.putImageData(imageData, 0, 0);
+            newFrame = new VideoFrame(canvas, {
+              timestamp: originalTimestamp / speed,
+              duration: originalDuration ? originalDuration / speed : undefined,
+            });
           }
-          
-          frameBuffers[actualFrameCount] = processedPixels;
-          actualFrameCount++;
-        }
 
-        // 减少进度更新频率
-        if (i % progressUpdateInterval === 0) {
-          const progress = 15 + (i / totalOutputFrames) * 40;
-          this.updateProgress(Math.min(55, progress));
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-      }
-
-      // 清理 WebGL 资源
-      glRenderer.destroy();
-
-      console.log("[WebAV] 帧处理完成，共", actualFrameCount, "帧");
-      this.updateProgress(60);
-
-      // 销毁源 clip
-      sourceClip.destroy();
-
-      // 创建新的 clip 用于输出
-      const outputClip = new MP4Clip(new ReadableStream({
-        start(controller) {
-          controller.enqueue(videoData.slice());
-          controller.close();
-        },
-      }));
-      await outputClip.ready;
-
-      // 预创建 ImageData 对象复用
-      const reusableImageData = ctx.createImageData(width, height);
-
-      // 使用 tickInterceptor 替换帧
-      outputClip.tickInterceptor = async (time, tickRet) => {
-        const targetIndex = Math.min(
-          Math.floor(time / frameIntervalUs),
-          actualFrameCount - 1
-        );
-        
-        if (targetIndex >= 0 && targetIndex < actualFrameCount && tickRet.video) {
-          // 复用 ImageData，只更新数据
-          reusableImageData.data.set(frameBuffers[targetIndex]);
-          ctx.putImageData(reusableImageData, 0, 0);
-          
-          const newFrame = new VideoFrame(canvas, {
-            timestamp: time,
-            duration: frameIntervalUs,
-          });
-          
           tickRet.video.close();
           tickRet.video = newFrame;
+
+          // 更新进度
+          frameCount++;
+          if (frameCount % 10 === 0) {
+            const progress = 15 + Math.min(50, (frameCount / estimatedFrames) * 50);
+            this.updateProgress(progress);
+          }
         }
-        
         return tickRet;
       };
 
-      this.updateProgress(65);
+      this.updateProgress(20);
 
-      // 使用 OffscreenSprite 包装
-      const sprite = new OffscreenSprite(outputClip);
+      // 创建 OffscreenSprite 并设置时长
+      const sprite = new OffscreenSprite(clip);
       sprite.time = { offset: 0, duration: newDurationUs };
 
+      // 创建 Combinator 合成视频
       const combinator = new Combinator({ width, height });
-
       await combinator.addSprite(sprite);
       this.updateProgress(70);
 
@@ -831,7 +774,7 @@ export class WebAVWrapper {
         this.updateProgress(progress);
       }
 
-      // 合并数据（预分配大小）
+      // 合并数据
       const resultBuffer = new Uint8Array(totalBytes);
       let offset = 0;
       for (const chunk of chunks) {
@@ -839,15 +782,12 @@ export class WebAVWrapper {
         offset += chunk.length;
       }
 
-      this.updateProgress(100);
-      console.log("[WebAV] 滤镜处理完成，输出大小:", totalBytes, "输出帧数:", actualFrameCount);
-
       // 清理资源
-      outputClip.destroy();
-      // 显式清理帧缓冲
-      for (let i = 0; i < actualFrameCount; i++) {
-        frameBuffers[i] = null as any;
-      }
+      glRenderer.destroy();
+      clip.destroy();
+
+      this.updateProgress(100);
+      console.log("[WebAV] 滤镜处理完成，输出大小:", totalBytes);
 
       return new Blob([resultBuffer], { type: "video/mp4" });
     } catch (error) {
