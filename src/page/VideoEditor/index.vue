@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
-import { VideoEditor } from "./Video";
+import { VideoEditor } from "../../package/Video/Video";
 import TimeLine from "../../components/TimeLine.vue";
 
 const router = useRouter();
