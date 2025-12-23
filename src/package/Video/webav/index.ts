@@ -5,6 +5,11 @@ import { MP4Clip, Combinator, OffscreenSprite } from "@webav/av-cliper";
  * 提供与 FFmpegWrapper 相同的接口
  * 
  * 参考文档: https://webav-tech.github.io/WebAV/_api/av-cliper/
+ * 
+ * 倍速实现原理（基于 demo）：
+ * - 使用 clip.tick(time) 可以读取视频指定时间点的帧
+ * - 倍速播放时：outputTime -> sourceTime = outputTime * speed
+ * - 例如 2x 倍速：输出第 1 秒时，从源视频的第 2 秒读取帧
  */
 export class WebAVWrapper {
   private isLoaded: boolean = false;
@@ -84,11 +89,11 @@ export class WebAVWrapper {
 
   /**
    * 调整视频倍速
-   * 通过 MP4Clip.tick() 手动 seek 到指定时间读取帧来实现真正的倍速效果
    * 
-   * 倍速原理：
-   * - 2x 倍速：输出时间 t 时，从源视频的 t*2 位置读取帧
-   * - 0.5x 倍速：输出时间 t 时，从源视频的 t*0.5 位置读取帧
+   * 基于 demo 的实现原理：
+   * - 使用 clip.tick(sourceTime) 读取源视频指定时间的帧
+   * - 倍速公式：sourceTime = outputTime * speed
+   * - 例如 2x 倍速：输出第 0.5 秒时，从源视频第 1 秒读取帧
    * 
    * @param inputFile 输入视频文件
    * @param speed 倍速值（例如：0.5 = 0.5倍速，2.0 = 2倍速）
@@ -111,11 +116,11 @@ export class WebAVWrapper {
       console.log("[WebAV] 开始调整倍速:", speed);
       this.updateProgress(5);
 
-      // 读取视频文件，保存原始数据用于后续复制
-      const originalBuffer = await inputFile.arrayBuffer();
-      const videoData = new Uint8Array(originalBuffer);
+      // 读取视频文件
+      const videoBuffer = await inputFile.arrayBuffer();
+      const videoData = new Uint8Array(videoBuffer);
       
-      // 创建源视频 clip（使用复制的数据）
+      // 创建用于读取源帧的 clip
       const sourceClip = new MP4Clip(new ReadableStream({
         start(controller) {
           controller.enqueue(new Uint8Array(videoData));
@@ -126,10 +131,12 @@ export class WebAVWrapper {
       this.updateProgress(10);
 
       const meta = sourceClip.meta;
-      const originalDurationUs = meta.duration;
+      const originalDurationUs = meta.duration; // 微秒
       const newDurationUs = originalDurationUs / speed;
+      
+      // 输出帧率和帧间隔
       const fps = 30;
-      const frameIntervalUs = 1_000_000 / fps;
+      const frameIntervalUs = 1_000_000 / fps; // 每帧间隔（微秒）
       const totalOutputFrames = Math.ceil(newDurationUs / frameIntervalUs);
       
       console.log("[WebAV] 视频信息:", {
@@ -138,6 +145,7 @@ export class WebAVWrapper {
         originalDurationSec: originalDurationUs / 1e6,
         newDurationSec: newDurationUs / 1e6,
         speed,
+        fps,
         totalOutputFrames,
       });
 
@@ -150,88 +158,87 @@ export class WebAVWrapper {
         throw new Error("无法创建 Canvas 上下文");
       }
 
-      // 收集所有需要输出的帧
-      const frames: { timestamp: number; imageData: ImageData }[] = [];
-      let processedFrames = 0;
-
-      // 手动逐帧处理：对于输出的每一帧，从源视频的对应位置读取
+      // 预先提取所有需要的帧的图像数据
+      // 核心逻辑：对于输出的每一帧（outputTime），从源视频的 sourceTime = outputTime * speed 位置读取
+      const frameImages: ImageData[] = [];
+      
       for (let i = 0; i < totalOutputFrames; i++) {
         const outputTimeUs = i * frameIntervalUs;
-        const sourceTimeUs = outputTimeUs * speed;
+        const sourceTimeUs = Math.round(outputTimeUs * speed);
         
+        // 超出源视频时长则停止
         if (sourceTimeUs >= originalDurationUs) break;
 
-        // 从源视频读取指定时间的帧
-        const tickResult = await sourceClip.tick(sourceTimeUs);
+        // 从源视频读取指定时间的帧（这是 demo 中的核心方法）
+        const { state, video } = await sourceClip.tick(sourceTimeUs);
         
-        if (tickResult.state === "done" || !tickResult.video) break;
+        if (state === "done") break;
+        
+        if (video != null && state === "success") {
+          // 绘制到 canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0, video.codedWidth, video.codedHeight, 0, 0, canvas.width, canvas.height);
+          video.close();
 
-        // 绘制到 canvas
-        ctx.drawImage(tickResult.video, 0, 0, meta.width, meta.height);
-        tickResult.video.close();
+          // 保存图像数据
+          frameImages.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
 
-        // 保存帧数据
-        frames.push({
-          timestamp: outputTimeUs,
-          imageData: ctx.getImageData(0, 0, meta.width, meta.height),
-        });
-
-        processedFrames++;
-        const progress = 15 + (processedFrames / totalOutputFrames) * 40;
+        // 更新进度 (15% - 55%)
+        const progress = 15 + (i / totalOutputFrames) * 40;
         this.updateProgress(Math.min(55, progress));
 
-        // 每处理一些帧后让出控制权
-        if (processedFrames % 5 === 0) {
+        // 每处理一些帧后让出控制权，避免阻塞 UI
+        if (i % 10 === 0) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
 
-      console.log("[WebAV] 帧提取完成，共", frames.length, "帧");
+      console.log("[WebAV] 帧提取完成，共", frameImages.length, "帧");
       this.updateProgress(60);
 
-      // 清理源 clip
-      await sourceClip.destroy?.();
+      // 销毁源 clip
+      sourceClip.destroy();
 
-      // 创建一个新的 clip，用于输出
-      // 我们需要创建一个自定义的 clip，它返回我们预处理好的帧
-      // 但 WebAV 不支持自定义 IClip，所以我们使用另一种方法：
-      // 创建一个新的 MP4Clip，然后用 tickInterceptor 替换它的帧
-
+      // 创建新的 clip 用于输出
       const outputClip = new MP4Clip(new ReadableStream({
         start(controller) {
-          // 使用复制的数据创建新的 clip
           controller.enqueue(new Uint8Array(videoData));
           controller.close();
         },
       }));
       await outputClip.ready;
 
-      // 使用帧索引来跟踪当前应该返回哪一帧
-      let frameIndex = 0;
-      
-      outputClip.tickInterceptor = async (_, tickRet) => {
-        if (tickRet.video && frameIndex < frames.length) {
-          const frameData = frames[frameIndex];
-          
+      // 使用 tickInterceptor 替换帧
+      let currentFrameIndex = 0;
+      outputClip.tickInterceptor = async (time, tickRet) => {
+        // 计算当前应该使用哪一帧
+        const targetIndex = Math.min(
+          Math.floor(time / frameIntervalUs),
+          frameImages.length - 1
+        );
+        
+        if (targetIndex >= 0 && targetIndex < frameImages.length && tickRet.video) {
           // 将预处理的帧数据绘制到 canvas
-          ctx.putImageData(frameData.imageData, 0, 0);
+          ctx.putImageData(frameImages[targetIndex], 0, 0);
           
-          // 创建新的 VideoFrame
+          // 创建新的 VideoFrame，使用新的时间戳
           const newFrame = new VideoFrame(canvas, {
-            timestamp: frameData.timestamp,
+            timestamp: time,
             duration: frameIntervalUs,
           });
           
           tickRet.video.close();
           tickRet.video = newFrame;
-          frameIndex++;
+          currentFrameIndex = targetIndex + 1;
         }
+        
         return tickRet;
       };
 
       this.updateProgress(65);
 
-      // 创建 sprite 并设置输出时长
+      // 使用 OffscreenSprite 包装，设置新的时长
       const sprite = new OffscreenSprite(outputClip);
       sprite.time = { offset: 0, duration: newDurationUs };
 
@@ -272,10 +279,11 @@ export class WebAVWrapper {
       }
 
       this.updateProgress(100);
-      console.log("[WebAV] 倍速处理完成，输出大小:", totalSize, "输出帧数:", frames.length);
+      console.log("[WebAV] 倍速处理完成，输出大小:", totalSize, "输出帧数:", frameImages.length);
 
       // 清理资源
-      await outputClip.destroy?.();
+      outputClip.destroy();
+      frameImages.length = 0;
 
       return new Blob([resultBuffer], { type: "video/mp4" });
     } catch (error) {
@@ -301,7 +309,6 @@ export class WebAVWrapper {
     }
 
     if (contrast === 1.0) {
-      // 如果对比度为 1.0，直接返回原文件
       return new Blob([await inputFile.arrayBuffer()], { type: "video/mp4" });
     }
 
@@ -311,7 +318,11 @@ export class WebAVWrapper {
 
   /**
    * 应用多个视频滤镜（倍速和对比度可以叠加）
-   * 使用 WebAV 的 tickInterceptor 实现帧级处理
+   * 
+   * 实现原理：
+   * - 倍速：使用 clip.tick(outputTime * speed) 从源视频读取帧
+   * - 对比度：使用 Canvas 对每帧进行像素级处理
+   * 
    * @param inputFile 输入视频文件
    * @param options 滤镜选项
    * @param options.speed 倍速值（可选，默认 1.0）
@@ -351,123 +362,172 @@ export class WebAVWrapper {
       console.log("[WebAV] 开始应用滤镜，倍速:", speed, "对比度:", contrast);
       this.updateProgress(5);
 
-      // 读取视频文件并创建 MP4Clip
+      // 读取视频文件
       const videoBuffer = await inputFile.arrayBuffer();
-      const videoStream = new ReadableStream({
+      const videoData = new Uint8Array(videoBuffer);
+      
+      // 创建用于读取源帧的 clip
+      const sourceClip = new MP4Clip(new ReadableStream({
         start(controller) {
-          controller.enqueue(new Uint8Array(videoBuffer));
+          controller.enqueue(new Uint8Array(videoData));
           controller.close();
         },
-      });
+      }));
+      await sourceClip.ready;
+      this.updateProgress(10);
 
-      const clip = new MP4Clip(videoStream);
-      await clip.ready;
-      this.updateProgress(15);
-
-      // 获取视频信息
-      const meta = clip.meta;
-      const originalDuration = meta.duration;
-      const newDuration = originalDuration / speed;
+      const meta = sourceClip.meta;
+      const originalDurationUs = meta.duration;
+      const newDurationUs = originalDurationUs / speed;
+      
+      const fps = 30;
+      const frameIntervalUs = 1_000_000 / fps;
+      const totalOutputFrames = Math.ceil(newDurationUs / frameIntervalUs);
 
       console.log("[WebAV] 视频信息:", {
         width: meta.width,
         height: meta.height,
-        duration: originalDuration / 1e6,
-        newDuration: newDuration / 1e6,
+        originalDurationSec: originalDurationUs / 1e6,
+        newDurationSec: newDurationUs / 1e6,
+        speed,
+        contrast,
+        totalOutputFrames,
       });
 
-      // 创建用于对比度处理的 Canvas
+      this.updateProgress(15);
+
+      // 创建 Canvas 用于绘制和处理帧
       const canvas = new OffscreenCanvas(meta.width, meta.height);
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         throw new Error("无法创建 Canvas 上下文");
       }
 
-      // 使用 tickInterceptor 处理每一帧
-      clip.tickInterceptor = async (_, tickRet) => {
-        if (tickRet.video) {
-          // 1. 调整时间戳（倍速）
-          const newTimestamp = tickRet.video.timestamp / speed;
-          const newDurationVal = tickRet.video.duration ? tickRet.video.duration / speed : undefined;
+      // 对比度处理函数
+      const applyContrast = (imageData: ImageData, contrastValue: number) => {
+        const data = imageData.data;
+        const factor = contrastValue;
+        const midpoint = 128;
 
-          // 2. 应用对比度滤镜
-          if (contrast !== 1.0) {
-            // 将 VideoFrame 绘制到 Canvas
-            ctx.drawImage(tickRet.video, 0, 0);
-            
-            // 获取像素数据并应用对比度
-            const imageData = ctx.getImageData(0, 0, meta.width, meta.height);
-            const data = imageData.data;
-            const factor = contrast;
-            const midpoint = 128;
-
-            for (let i = 0; i < data.length; i += 4) {
-              // RGB 通道
-              for (let j = 0; j < 3; j++) {
-                const value = data[i + j];
-                const adjusted = (value - midpoint) * factor + midpoint;
-                data[i + j] = Math.max(0, Math.min(255, adjusted));
-              }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-
-            // 创建新的 VideoFrame
-            const newFrame = new VideoFrame(canvas, {
-              timestamp: newTimestamp,
-              duration: newDurationVal,
-            });
-            tickRet.video.close();
-            tickRet.video = newFrame;
-          } else {
-            // 仅调整时间戳
-            const newFrame = new VideoFrame(tickRet.video, {
-              timestamp: newTimestamp,
-              duration: newDurationVal,
-            });
-            tickRet.video.close();
-            tickRet.video = newFrame;
+        for (let i = 0; i < data.length; i += 4) {
+          // 只处理 RGB 通道，不处理 Alpha
+          for (let j = 0; j < 3; j++) {
+            const value = data[i + j];
+            const adjusted = (value - midpoint) * factor + midpoint;
+            data[i + j] = Math.max(0, Math.min(255, adjusted));
           }
         }
+      };
+
+      // 预先提取并处理所有帧
+      const frameImages: ImageData[] = [];
+      
+      for (let i = 0; i < totalOutputFrames; i++) {
+        const outputTimeUs = i * frameIntervalUs;
+        const sourceTimeUs = Math.round(outputTimeUs * speed);
+        
+        if (sourceTimeUs >= originalDurationUs) break;
+
+        // 从源视频读取帧
+        const { state, video } = await sourceClip.tick(sourceTimeUs);
+        
+        if (state === "done") break;
+        
+        if (video != null && state === "success") {
+          // 绘制到 canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0, video.codedWidth, video.codedHeight, 0, 0, canvas.width, canvas.height);
+          video.close();
+
+          // 应用对比度
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          if (contrast !== 1.0) {
+            applyContrast(imageData, contrast);
+          }
+          frameImages.push(imageData);
+        }
+
+        // 更新进度 (15% - 55%)
+        const progress = 15 + (i / totalOutputFrames) * 40;
+        this.updateProgress(Math.min(55, progress));
+
+        // 每处理一些帧后让出控制权
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+
+      console.log("[WebAV] 帧处理完成，共", frameImages.length, "帧");
+      this.updateProgress(60);
+
+      // 销毁源 clip
+      sourceClip.destroy();
+
+      // 创建新的 clip 用于输出
+      const outputClip = new MP4Clip(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(videoData));
+          controller.close();
+        },
+      }));
+      await outputClip.ready;
+
+      // 使用 tickInterceptor 替换帧
+      outputClip.tickInterceptor = async (time, tickRet) => {
+        const targetIndex = Math.min(
+          Math.floor(time / frameIntervalUs),
+          frameImages.length - 1
+        );
+        
+        if (targetIndex >= 0 && targetIndex < frameImages.length && tickRet.video) {
+          ctx.putImageData(frameImages[targetIndex], 0, 0);
+          
+          const newFrame = new VideoFrame(canvas, {
+            timestamp: time,
+            duration: frameIntervalUs,
+          });
+          
+          tickRet.video.close();
+          tickRet.video = newFrame;
+        }
+        
         return tickRet;
       };
 
-      this.updateProgress(25);
+      this.updateProgress(65);
 
-      // 创建 OffscreenSprite 并添加到 Combinator
-      const sprite = new OffscreenSprite(clip);
-      sprite.time = { offset: 0, duration: newDuration };
+      // 使用 OffscreenSprite 包装
+      const sprite = new OffscreenSprite(outputClip);
+      sprite.time = { offset: 0, duration: newDurationUs };
 
-      // 创建 Combinator 进行视频合成
       const combinator = new Combinator({
         width: meta.width,
         height: meta.height,
       });
 
       await combinator.addSprite(sprite);
-      this.updateProgress(35);
+      this.updateProgress(70);
 
       // 输出视频流
       const outputStream = combinator.output();
       const chunks: Uint8Array[] = [];
       const reader = outputStream.getReader();
-
+      
       let totalBytes = 0;
-      const estimatedSize = videoBuffer.byteLength;
+      const estimatedSize = Math.max(videoData.byteLength / speed, 100000);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
+        
         chunks.push(value);
         totalBytes += value.byteLength;
-
-        // 更新进度 (35% - 95%)
-        const progress = 35 + Math.min(60, (totalBytes / estimatedSize) * 60);
+        
+        const progress = 70 + Math.min(25, (totalBytes / estimatedSize) * 25);
         this.updateProgress(progress);
       }
 
-      // 合并数据并创建 Blob
+      // 合并数据
       const totalSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
       const resultBuffer = new Uint8Array(totalSize);
       let offset = 0;
@@ -477,10 +537,11 @@ export class WebAVWrapper {
       }
 
       this.updateProgress(100);
-      console.log("[WebAV] 滤镜处理完成，输出大小:", totalSize);
+      console.log("[WebAV] 滤镜处理完成，输出大小:", totalSize, "输出帧数:", frameImages.length);
 
       // 清理资源
-      await clip.destroy?.();
+      outputClip.destroy();
+      frameImages.length = 0;
 
       return new Blob([resultBuffer], { type: "video/mp4" });
     } catch (error) {
