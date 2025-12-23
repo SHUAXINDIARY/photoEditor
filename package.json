@@ -8,7 +8,8 @@
     "preview": "rspack preview",
     "dev:vite": "vite",
     "build:vite": "vite build",
-    "preview:vite": "vite preview"
+    "preview:vite": "vite preview",
+    "start": "npm run dev:vite"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

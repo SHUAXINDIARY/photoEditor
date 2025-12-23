@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
-import { ImageEditor } from "../../utils/ImageEditor";
+import { ImageEditor } from "../../package/Image/ImageEditor";
 import { throttle, debounce } from "../../utils/utils";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");

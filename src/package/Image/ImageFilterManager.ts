@@ -273,3 +273,4 @@ export class ImageFilterManager {
         this.scheduleApplyFilters();
     }
 }
+
