@@ -144,6 +144,7 @@ const clearVideo = () => {
 
 // 应用倍速处理（会同时应用对比度，保留已应用的对比度）
 const applySpeed = async () => {
+	console.time("倍速测试")
 	if (!videoEditor.value || !originalVideoFile.value) {
 		toastWarning("请先上传视频文件");
 		return;
@@ -236,10 +237,12 @@ const applySpeed = async () => {
 		isProcessing.value = false;
 		processingProgress.value = 0;
 	}
+	console.timeEnd("倍速测试")
 };
 
 // 应用对比度处理（会同时应用倍速，保留已应用的倍速）
 const applyContrast = async () => {
+	console.time("对比度测速")
 	if (!videoEditor.value || !originalVideoFile.value) {
 		toastWarning("请先上传视频文件");
 		return;
@@ -332,6 +335,7 @@ const applyContrast = async () => {
 		isProcessing.value = false;
 		processingProgress.value = 0;
 	}
+	console.timeEnd("对比度测速")
 };
 
 // 下载处理后的视频
