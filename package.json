@@ -15,6 +15,8 @@
     "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "*",
     "@ffmpeg/util": "*",
+    "@webav/av-canvas": "^1.2.7",
+    "@webav/av-cliper": "^1.2.7",
     "konva": "^10.0.12",
     "vue": "^3.5.24",
     "vue-konva": "^3.2.6",

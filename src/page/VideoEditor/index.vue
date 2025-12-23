@@ -30,29 +30,26 @@ const initFFmpeg = async () => {
 	ffmpegLoadProgress.value = 0;
 
 	try {
-		// 模拟加载进度（因为 load 过程没有实时进度）
-		const progressInterval = setInterval(() => {
-			if (ffmpegLoadProgress.value < 90) {
-				ffmpegLoadProgress.value += 10;
-			}
-		}, 200);
+		await videoEditor.value.init((progress) => {
+			ffmpegLoadProgress.value = progress;
+		});
 
-		await videoEditor.value.load();
-
-		// 加载完成，设置进度为 100%
-		clearInterval(progressInterval);
-		ffmpegLoadProgress.value = 100;
+		// 更新状态（init 成功后会自动更新）
+		isFFmpegLoading.value = videoEditor.value.getIsLoading();
+		isFFmpegLoaded.value = videoEditor.value.getIsLoaded();
+		ffmpegLoadError.value = videoEditor.value.getLoadError();
 
 		// 短暂延迟后隐藏加载界面
 		setTimeout(() => {
-			isFFmpegLoaded.value = true;
-			isFFmpegLoading.value = false;
+			isFFmpegLoaded.value = videoEditor.value?.getIsLoaded() ?? false;
+			isFFmpegLoading.value = videoEditor.value?.getIsLoading() ?? false;
 		}, 500);
 	} catch (error) {
-		console.error("FFmpeg 加载失败:", error);
-		ffmpegLoadError.value = error instanceof Error ? error.message : "未知错误";
-		isFFmpegLoading.value = false;
-		isFFmpegLoaded.value = false;
+		console.error("VideoEditor 初始化失败:", error);
+		// 更新状态（init 失败后会自动更新）
+		isFFmpegLoading.value = videoEditor.value?.getIsLoading() ?? false;
+		isFFmpegLoaded.value = videoEditor.value?.getIsLoaded() ?? false;
+		ffmpegLoadError.value = videoEditor.value?.getLoadError() || (error instanceof Error ? error.message : "未知错误");
 	}
 };
 

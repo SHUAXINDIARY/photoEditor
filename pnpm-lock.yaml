@@ -17,6 +17,12 @@ importers:
       '@ffmpeg/util':
         specifier: '*'
         version: 0.12.2
+      '@webav/av-canvas':
+        specifier: ^1.2.7
+        version: 1.2.7
+      '@webav/av-cliper':
+        specifier: ^1.2.7
+        version: 1.2.7
       konva:
         specifier: ^10.0.12
         version: 10.0.12
@@ -682,6 +688,18 @@ packages:
 
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
+
+  '@webav/av-canvas@1.2.7':
+    resolution: {integrity: sha512-UFpZzjRTNCdrRmVkfQsANdRjpPOl+ejBB/lKbitHoi7f2APAq2GlJx/X4Wnwl0RGVDhUa4UgGdChpuP8RiYvqw==}
+
+  '@webav/av-cliper@1.2.7':
+    resolution: {integrity: sha512-zn+h5gJVyOupTraykCz1/wiowSfV1/jqt7Kz3FHArhp1NgB74/3H9chL/Bz+uwiVYCusU9C8Eu/l3F9WvTbsig==}
+
+  '@webav/internal-utils@1.2.7':
+    resolution: {integrity: sha512-99hajvWwrVb/j0O3vu6zK5XXB+aAI5S4MLkPcJdw2GmGn/JYKZU8I7y7iyIf5ipuPGLucmD9O7zzb6SSeXcYkg==}
+
+  '@webav/mp4box.js@0.5.7':
+    resolution: {integrity: sha512-KgScEtDpiLnWvj1Rj8Ri9fDWxTjfdNr7cmY/PT88EmttHh6cLxMAeyD/W8Vydes4z7qV/c5VDAaP4cTlaO0E9g==}
 
   '@xtuc/ieee754@1.2.0':
     resolution: {integrity: sha512-DX8nKgqcGwsc0eJSqYt5lwP4DH5FlHnmuWWBRy7X0NcaGR0ZtuyeESgMwTYVEtxmsNGY+qit4QYT/MIYTOTPeA==}
@@ -1364,6 +1382,9 @@ packages:
     resolution: {integrity: sha512-ur5UIdyw5Y7yEj9wLzhqXiy6GZ3Mwx0yGI+5sMn2r0N0v3cKJvUmFH5yPP+WXh9e0xfyzyJX95D8l088DNFj7A==}
     hasBin: true
 
+  opfs-tools@0.7.4:
+    resolution: {integrity: sha512-DJgQnXyPcCj3q8pKa8SjP4HfNBPffj8kO6W1nc2zQydTqu5G/AxOuIjmWnRxZ84nE1EOpzZzhj8MYCZP1jRR9A==}
+
   p-retry@6.2.1:
     resolution: {integrity: sha512-hEt02O4hUct5wtwg4H4KcWgDdm+l1bOaEy/hWzd8xtXB9BqxTWBBhb+2ImAtH4Cv4rPjV76xN3Zumqk3k3AhhQ==}
     engines: {node: '>=16.17'}
@@ -1733,6 +1754,10 @@ packages:
   watchpack@2.4.4:
     resolution: {integrity: sha512-c5EGNOiyxxV5qmTtAB7rbiXxi1ooX1pQKMLX/MIabJjRA0SJBQOjKF+KSVfHkr9U1cADPon0mRiVe/riyaiDUA==}
     engines: {node: '>=10.13.0'}
+
+  wave-resampler@1.0.0:
+    resolution: {integrity: sha512-bE3rbpZXuKAV52Cd8/BeJvy82ZqEHK8pPWHrZ9JioaVVTBlmWbDC+u4p9blhFcf0Skepb4hlOAHc25XfqLC48g==}
+    engines: {node: '>=8'}
 
   wbuf@1.7.3:
     resolution: {integrity: sha512-O84QOnr0icsbFGLS0O3bI5FswxzRr8/gHwWkDlQFskhSPryQXvrTMxjxGP4+iWYoauLoBvfDpkrOauZ+0iZpDA==}
@@ -2430,6 +2455,24 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
 
+  '@webav/av-canvas@1.2.7':
+    dependencies:
+      '@webav/av-cliper': 1.2.7
+      '@webav/internal-utils': 1.2.7
+
+  '@webav/av-cliper@1.2.7':
+    dependencies:
+      '@webav/internal-utils': 1.2.7
+      '@webav/mp4box.js': 0.5.7
+      opfs-tools: 0.7.4
+      wave-resampler: 1.0.0
+
+  '@webav/internal-utils@1.2.7':
+    dependencies:
+      '@webav/mp4box.js': 0.5.7
+
+  '@webav/mp4box.js@0.5.7': {}
+
   '@xtuc/ieee754@1.2.0': {}
 
   '@xtuc/long@4.2.2': {}
@@ -3070,6 +3113,8 @@ snapshots:
 
   opener@1.5.2: {}
 
+  opfs-tools@0.7.4: {}
+
   p-retry@6.2.1:
     dependencies:
       '@types/retry': 0.12.2
@@ -3457,6 +3502,8 @@ snapshots:
     dependencies:
       glob-to-regexp: 0.4.1
       graceful-fs: 4.2.11
+
+  wave-resampler@1.0.0: {}
 
   wbuf@1.7.3:
     dependencies:
