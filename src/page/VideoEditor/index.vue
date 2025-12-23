@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, onBeforeUnmount, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video";
-import TimeLine from "../../components/TimeLine.vue";
+import TimeLine from "../../components/TimeLine/TimeLine.vue";
+import { toastWarning, toastError, toastSuccess } from "../../utils/toast";
 
 const router = useRouter();
 const videoUrl = ref<string>("");
@@ -58,7 +59,7 @@ const initFFmpeg = async (mode: VideoProcessingMode) => {
 const selectMode = async (mode: VideoProcessingMode) => {
 	// 如果正在处理，不允许切换
 	if (isProcessing.value) {
-		alert("正在处理视频，请等待处理完成后再切换模式");
+		toastWarning("正在处理视频，请等待处理完成后再切换模式");
 		return;
 	}
 
@@ -103,7 +104,7 @@ const handleVideoUpload = (event: Event) => {
 
 	// 检查是否为视频文件
 	if (!file.type.startsWith("video/")) {
-		alert("请上传视频文件");
+		toastError("请上传视频文件");
 		return;
 	}
 
@@ -144,17 +145,17 @@ const clearVideo = () => {
 // 应用倍速处理（会同时应用对比度，保留已应用的对比度）
 const applySpeed = async () => {
 	if (!videoEditor.value || !originalVideoFile.value) {
-		alert("请先上传视频文件");
+		toastWarning("请先上传视频文件");
 		return;
 	}
 
 	if (!isFFmpegLoaded.value) {
-		alert(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
+		toastWarning(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
 		return;
 	}
 
 	if (speed.value <= 0) {
-		alert("倍速值必须大于 0");
+		toastError("倍速值必须大于 0");
 		return;
 	}
 
@@ -195,12 +196,12 @@ const applySpeed = async () => {
 
 		// 创建新的视频 URL
 		const newVideoUrl = URL.createObjectURL(outputBlob);
-		
+
 		// 释放旧的 Object URL（如果存在且是 blob URL）
 		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
 			URL.revokeObjectURL(videoUrl.value);
 		}
-		
+
 		videoUrl.value = newVideoUrl;
 
 		// 等待 DOM 更新后再强制视频元素重新加载
@@ -227,10 +228,10 @@ const applySpeed = async () => {
 		const effects = [];
 		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
 		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
-		alert(`视频已成功应用：${effects.join(" + ")}！`);
+		toastSuccess(`视频已成功应用：${effects.join(" + ")}！`);
 	} catch (error) {
 		console.error("视频处理失败:", error);
-		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
+		toastError(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
 		isProcessing.value = false;
 		processingProgress.value = 0;
@@ -240,17 +241,17 @@ const applySpeed = async () => {
 // 应用对比度处理（会同时应用倍速，保留已应用的倍速）
 const applyContrast = async () => {
 	if (!videoEditor.value || !originalVideoFile.value) {
-		alert("请先上传视频文件");
+		toastWarning("请先上传视频文件");
 		return;
 	}
 
 	if (!isFFmpegLoaded.value) {
-		alert(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
+		toastWarning(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
 		return;
 	}
 
 	if (contrast.value <= 0) {
-		alert("对比度值必须大于 0");
+		toastError("对比度值必须大于 0");
 		return;
 	}
 
@@ -291,12 +292,12 @@ const applyContrast = async () => {
 
 		// 创建新的视频 URL
 		const newVideoUrl = URL.createObjectURL(outputBlob);
-		
+
 		// 释放旧的 Object URL（如果存在且是 blob URL）
 		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
 			URL.revokeObjectURL(videoUrl.value);
 		}
-		
+
 		videoUrl.value = newVideoUrl;
 
 		// 等待 DOM 更新后再强制视频元素重新加载
@@ -323,10 +324,10 @@ const applyContrast = async () => {
 		const effects = [];
 		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
 		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
-		alert(`视频已成功应用：${effects.join(" + ")}！`);
+		toastSuccess(`视频已成功应用：${effects.join(" + ")}！`);
 	} catch (error) {
 		console.error("视频处理失败:", error);
-		alert(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
+		toastError(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
 		isProcessing.value = false;
 		processingProgress.value = 0;
@@ -336,7 +337,7 @@ const applyContrast = async () => {
 // 下载处理后的视频
 const downloadVideo = () => {
 	if (!videoFile.value) {
-		alert("没有可下载的视频");
+		toastWarning("没有可下载的视频");
 		return;
 	}
 
@@ -406,7 +407,8 @@ const downloadVideo = () => {
 					<button @click="selectMode(processingMode!)" class="retry-button">
 						🔄 重新加载
 					</button>
-					<button @click="processingMode = null; isFFmpegLoaded = false; ffmpegLoadError = ''" class="back-button">
+					<button @click="processingMode = null; isFFmpegLoaded = false; ffmpegLoadError = ''"
+						class="back-button">
 						↩️ 重新选择模式
 					</button>
 					<button @click="goToHome" class="back-button">
@@ -425,20 +427,14 @@ const downloadVideo = () => {
 					<div class="mode-selector">
 						<label class="mode-label">处理模式：</label>
 						<div class="mode-buttons">
-							<button
-								@click="selectMode('ffmpeg')"
-								class="mode-button"
+							<button @click="selectMode('ffmpeg')" class="mode-button"
 								:class="{ active: processingMode === 'ffmpeg' }"
-								:disabled="isProcessing || isFFmpegLoading"
-							>
+								:disabled="isProcessing || isFFmpegLoading">
 								FFmpeg
 							</button>
-							<button
-								@click="selectMode('webav')"
-								class="mode-button"
+							<button @click="selectMode('webav')" class="mode-button"
 								:class="{ active: processingMode === 'webav' }"
-								:disabled="isProcessing || isFFmpegLoading"
-							>
+								:disabled="isProcessing || isFFmpegLoading">
 								WebAV
 							</button>
 						</div>
@@ -476,7 +472,8 @@ const downloadVideo = () => {
 								<div class="speed-presets">
 									<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
 										@click="speed = preset" class="speed-preset-btn"
-										:class="{ active: speed === preset }" :disabled="isProcessing || !isFFmpegLoaded">
+										:class="{ active: speed === preset }"
+										:disabled="isProcessing || !isFFmpegLoaded">
 										{{ preset }}x
 									</button>
 								</div>
@@ -1026,7 +1023,8 @@ const downloadVideo = () => {
 /* FFmpeg 加载遮罩层样式 */
 .loading-overlay {
 	position: fixed;
-	top: 60px; /* 从导航栏下方开始 */
+	top: 60px;
+	/* 从导航栏下方开始 */
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -1034,7 +1032,8 @@ const downloadVideo = () => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 999; /* 低于导航栏的 z-index: 1000 */
+	z-index: 999;
+	/* 低于导航栏的 z-index: 1000 */
 }
 
 .loading-content {
@@ -1105,7 +1104,8 @@ const downloadVideo = () => {
 /* FFmpeg 加载失败页面样式 */
 .error-overlay {
 	position: fixed;
-	top: 60px; /* 从导航栏下方开始 */
+	top: 60px;
+	/* 从导航栏下方开始 */
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -1113,7 +1113,8 @@ const downloadVideo = () => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 999; /* 低于导航栏的 z-index: 1000 */
+	z-index: 999;
+	/* 低于导航栏的 z-index: 1000 */
 }
 
 .error-content {
@@ -1421,7 +1422,8 @@ const downloadVideo = () => {
 /* 模式选择界面样式 */
 .mode-selection-overlay {
 	position: fixed;
-	top: 60px; /* 从导航栏下方开始 */
+	top: 60px;
+	/* 从导航栏下方开始 */
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -1429,7 +1431,8 @@ const downloadVideo = () => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 999; /* 低于导航栏的 z-index: 1000 */
+	z-index: 999;
+	/* 低于导航栏的 z-index: 1000 */
 }
 
 .mode-selection-content {

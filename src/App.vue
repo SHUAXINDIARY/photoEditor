@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
+import Toast from "./components/Toast/index.vue";
 
 const route = useRoute();
 </script>
@@ -27,6 +28,8 @@ const route = useRoute();
 		<main class="main-content">
 			<router-view />
 		</main>
+		<!-- 全局 Toast 组件 -->
+		<Toast />
 	</div>
 </template>
 

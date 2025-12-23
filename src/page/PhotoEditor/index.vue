@@ -2,6 +2,7 @@
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
 import { ImageEditor } from "../../package/Image/ImageEditor";
 import { throttle, debounce } from "../../utils/utils";
+import { toastSuccess, toastWarning, toastError } from "../../utils/toast";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
 const imageEditor = ref<ImageEditor | null>(null);
@@ -165,7 +166,7 @@ const clearStorage = () => {
 			imageEditor.value.clearImage();
 			imageEditor.value.resetFilters();
 		}
-		alert("缓存已清除");
+		toastSuccess("缓存已清除");
 	} catch (error) {
 		console.error("清除缓存失败:", error);
 	}
@@ -345,7 +346,7 @@ const handleBrushSizeChange = (value: number) => {
 // 导出画笔图层
 const handleExportBrush = async () => {
 	if (!imageEditor.value) {
-		alert("请先上传图片");
+		toastWarning("请先上传图片");
 		return;
 	}
 
@@ -358,17 +359,17 @@ const handleExportBrush = async () => {
 		link.href = dataURL;
 		link.click();
 
-		alert("导出成功！");
+		toastSuccess("导出成功！");
 	} catch (error: any) {
 		console.error("导出失败:", error);
-		alert(error.message || "导出失败，请重试");
+		toastError(error.message || "导出失败，请重试");
 	}
 };
 
 // 导出编辑后的完整图片（包含滤镜效果和画笔）
 const handleExportEditedImage = async () => {
 	if (!imageEditor.value) {
-		alert("请先上传图片");
+		toastWarning("请先上传图片");
 		return;
 	}
 
@@ -381,10 +382,10 @@ const handleExportEditedImage = async () => {
 		link.href = dataURL;
 		link.click();
 
-		alert("导出成功！");
+		toastSuccess("导出成功！");
 	} catch (error: any) {
 		console.error("导出失败:", error);
-		alert(error.message || "导出失败，请重试");
+		toastError(error.message || "导出失败，请重试");
 	}
 };
 
@@ -435,7 +436,7 @@ const handleFileUpload = async (event: Event) => {
 
 	// 检查是否为图片文件
 	if (!file.type.startsWith("image/")) {
-		alert("请上传图片文件");
+		toastError("请上传图片文件");
 		return;
 	}
 
@@ -463,7 +464,7 @@ const handleFileUpload = async (event: Event) => {
 				saveStateToStorage();
 			} catch (error) {
 				console.error("加载图片失败:", error);
-				alert("加载图片失败，请重试");
+				toastError("加载图片失败，请重试");
 			}
 		}
 	};
