@@ -1,6 +1,268 @@
 import { MP4Clip, Combinator, OffscreenSprite } from "@webav/av-cliper";
 
 /**
+ * WebGL 硬件加速渲染器
+ * 使用 GPU 并行处理像素，大幅提升对比度等滤镜的处理速度
+ */
+class WebGLContrastRenderer {
+  private canvas: OffscreenCanvas;
+  private gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
+  private program: WebGLProgram | null = null;
+  private texture: WebGLTexture | null = null;
+  private framebuffer: WebGLFramebuffer | null = null;
+  private outputTexture: WebGLTexture | null = null;
+  private contrastLocation: WebGLUniformLocation | null = null;
+  private positionBuffer: WebGLBuffer | null = null;
+  private texCoordBuffer: WebGLBuffer | null = null;
+  private isInitialized: boolean = false;
+  private width: number = 0;
+  private height: number = 0;
+
+  // 顶点着色器
+  private static readonly VERTEX_SHADER = `
+    attribute vec2 a_position;
+    attribute vec2 a_texCoord;
+    varying vec2 v_texCoord;
+    void main() {
+      gl_Position = vec4(a_position, 0.0, 1.0);
+      v_texCoord = a_texCoord;
+    }
+  `;
+
+  // 片段着色器 - 对比度处理
+  private static readonly FRAGMENT_SHADER = `
+    precision mediump float;
+    uniform sampler2D u_texture;
+    uniform float u_contrast;
+    varying vec2 v_texCoord;
+    void main() {
+      vec4 color = texture2D(u_texture, v_texCoord);
+      // 对比度公式: (color - 0.5) * contrast + 0.5
+      vec3 adjusted = (color.rgb - 0.5) * u_contrast + 0.5;
+      gl_FragColor = vec4(clamp(adjusted, 0.0, 1.0), color.a);
+    }
+  `;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.canvas = new OffscreenCanvas(width, height);
+  }
+
+  /**
+   * 初始化 WebGL 上下文和着色器
+   */
+  init(): boolean {
+    if (this.isInitialized) return true;
+
+    // 尝试获取 WebGL2，否则回退到 WebGL1
+    this.gl = this.canvas.getContext("webgl2") as WebGL2RenderingContext | null;
+    if (!this.gl) {
+      this.gl = this.canvas.getContext("webgl") as WebGLRenderingContext | null;
+    }
+
+    if (!this.gl) {
+      console.warn("[WebGL] WebGL 不可用，将使用 CPU 处理");
+      return false;
+    }
+
+    const gl = this.gl;
+
+    // 编译着色器
+    const vertexShader = this.compileShader(gl.VERTEX_SHADER, WebGLContrastRenderer.VERTEX_SHADER);
+    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, WebGLContrastRenderer.FRAGMENT_SHADER);
+
+    if (!vertexShader || !fragmentShader) {
+      console.warn("[WebGL] 着色器编译失败");
+      return false;
+    }
+
+    // 创建程序
+    this.program = gl.createProgram();
+    if (!this.program) return false;
+
+    gl.attachShader(this.program, vertexShader);
+    gl.attachShader(this.program, fragmentShader);
+    gl.linkProgram(this.program);
+
+    if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+      console.warn("[WebGL] 程序链接失败:", gl.getProgramInfoLog(this.program));
+      return false;
+    }
+
+    gl.useProgram(this.program);
+
+    // 设置顶点数据
+    const positions = new Float32Array([
+      -1, -1,  1, -1,  -1, 1,
+      -1, 1,   1, -1,   1, 1,
+    ]);
+    const texCoords = new Float32Array([
+      0, 1,  1, 1,  0, 0,
+      0, 0,  1, 1,  1, 0,
+    ]);
+
+    // 位置缓冲
+    this.positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    const positionLocation = gl.getAttribLocation(this.program, "a_position");
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // 纹理坐标缓冲
+    this.texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    const texCoordLocation = gl.getAttribLocation(this.program, "a_texCoord");
+    gl.enableVertexAttribArray(texCoordLocation);
+    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // 获取 uniform 位置
+    this.contrastLocation = gl.getUniformLocation(this.program, "u_contrast");
+
+    // 创建输入纹理
+    this.texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    // 设置视口
+    gl.viewport(0, 0, this.width, this.height);
+
+    this.isInitialized = true;
+    console.log("[WebGL] 硬件加速初始化成功");
+    return true;
+  }
+
+  /**
+   * 编译着色器
+   */
+  private compileShader(type: number, source: string): WebGLShader | null {
+    if (!this.gl) return null;
+    const shader = this.gl.createShader(type);
+    if (!shader) return null;
+
+    this.gl.shaderSource(shader, source);
+    this.gl.compileShader(shader);
+
+    if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+      console.warn("[WebGL] 着色器编译错误:", this.gl.getShaderInfoLog(shader));
+      this.gl.deleteShader(shader);
+      return null;
+    }
+
+    return shader;
+  }
+
+  /**
+   * 使用 GPU 处理视频帧的对比度
+   * @param videoFrame 输入的视频帧
+   * @param contrast 对比度值
+   * @returns 处理后的像素数据
+   */
+  processFrame(videoFrame: VideoFrame, contrast: number): Uint8ClampedArray | null {
+    if (!this.gl || !this.program || !this.texture) {
+      return null;
+    }
+
+    const gl = this.gl;
+
+    // 上传视频帧到纹理
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
+
+    // 设置对比度
+    gl.uniform1f(this.contrastLocation, contrast);
+
+    // 渲染
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 读取结果
+    const pixels = new Uint8ClampedArray(this.width * this.height * 4);
+    gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // WebGL 的 Y 轴是反的，需要翻转
+    const flipped = new Uint8ClampedArray(pixels.length);
+    const rowSize = this.width * 4;
+    for (let y = 0; y < this.height; y++) {
+      const srcOffset = y * rowSize;
+      const dstOffset = (this.height - 1 - y) * rowSize;
+      flipped.set(pixels.subarray(srcOffset, srcOffset + rowSize), dstOffset);
+    }
+
+    return flipped;
+  }
+
+  /**
+   * 直接处理 ImageBitmap 或 Canvas
+   */
+  processImageSource(source: ImageBitmap | OffscreenCanvas | HTMLCanvasElement, contrast: number): Uint8ClampedArray | null {
+    if (!this.gl || !this.program || !this.texture) {
+      return null;
+    }
+
+    const gl = this.gl;
+
+    // 上传图像到纹理
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+
+    // 设置对比度
+    gl.uniform1f(this.contrastLocation, contrast);
+
+    // 渲染
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 读取结果
+    const pixels = new Uint8ClampedArray(this.width * this.height * 4);
+    gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // WebGL 的 Y 轴是反的，需要翻转
+    const flipped = new Uint8ClampedArray(pixels.length);
+    const rowSize = this.width * 4;
+    for (let y = 0; y < this.height; y++) {
+      const srcOffset = y * rowSize;
+      const dstOffset = (this.height - 1 - y) * rowSize;
+      flipped.set(pixels.subarray(srcOffset, srcOffset + rowSize), dstOffset);
+    }
+
+    return flipped;
+  }
+
+  /**
+   * 获取 Canvas 用于创建 VideoFrame
+   */
+  getCanvas(): OffscreenCanvas {
+    return this.canvas;
+  }
+
+  /**
+   * 检查是否可用
+   */
+  isAvailable(): boolean {
+    return this.isInitialized && this.gl !== null;
+  }
+
+  /**
+   * 销毁资源
+   */
+  destroy(): void {
+    if (this.gl) {
+      if (this.texture) this.gl.deleteTexture(this.texture);
+      if (this.outputTexture) this.gl.deleteTexture(this.outputTexture);
+      if (this.framebuffer) this.gl.deleteFramebuffer(this.framebuffer);
+      if (this.positionBuffer) this.gl.deleteBuffer(this.positionBuffer);
+      if (this.texCoordBuffer) this.gl.deleteBuffer(this.texCoordBuffer);
+      if (this.program) this.gl.deleteProgram(this.program);
+    }
+    this.isInitialized = false;
+  }
+}
+
+/**
  * WebAV 封装类，负责基于 WebCodecs 的视频处理实现
  * 提供与 FFmpegWrapper 相同的接口
  * 
@@ -10,6 +272,10 @@ import { MP4Clip, Combinator, OffscreenSprite } from "@webav/av-cliper";
  * - 使用 clip.tick(time) 可以读取视频指定时间点的帧
  * - 倍速播放时：outputTime -> sourceTime = outputTime * speed
  * - 例如 2x 倍速：输出第 1 秒时，从源视频的第 2 秒读取帧
+ * 
+ * 对比度处理：
+ * - 优先使用 WebGL 硬件加速（GPU 并行处理）
+ * - 如果 WebGL 不可用，回退到 CPU 处理（使用 LUT 优化）
  */
 export class WebAVWrapper {
   private isLoaded: boolean = false;
@@ -394,34 +660,39 @@ export class WebAVWrapper {
 
       this.updateProgress(15);
 
-      // 创建 Canvas 用于绘制和处理帧
+      // 尝试使用 WebGL 硬件加速
+      const glRenderer = new WebGLContrastRenderer(width, height);
+      const useWebGL = glRenderer.init();
+      
+      // 创建 2D Canvas 用于绘制帧和回退处理
       const canvas = new OffscreenCanvas(width, height);
       const ctx = canvas.getContext("2d", { 
-        willReadFrequently: true,  // 优化：告诉浏览器会频繁读取像素
-        alpha: false,              // 优化：不需要 alpha 通道
+        willReadFrequently: true,
+        alpha: false,
       });
       if (!ctx) {
         throw new Error("无法创建 Canvas 上下文");
       }
 
-      // 性能优化：预计算对比度 LUT（查找表）
-      const contrastLUT = new Uint8ClampedArray(256);
-      const factor = contrast;
-      for (let i = 0; i < 256; i++) {
-        contrastLUT[i] = Math.max(0, Math.min(255, (i - 128) * factor + 128));
+      // CPU 回退：预计算对比度 LUT（查找表）
+      let contrastLUT: Uint8ClampedArray | null = null;
+      if (!useWebGL) {
+        contrastLUT = new Uint8ClampedArray(256);
+        const factor = contrast;
+        for (let i = 0; i < 256; i++) {
+          contrastLUT[i] = Math.max(0, Math.min(255, (i - 128) * factor + 128));
+        }
       }
 
-      // 性能优化：预分配帧数据数组，使用 Uint8ClampedArray 存储原始像素
-      // 避免存储 ImageData 对象，减少内存开销
+      // 性能优化：预分配帧数据数组
       const frameBuffers: Uint8ClampedArray[] = new Array(totalOutputFrames);
       let actualFrameCount = 0;
 
-      // 使用 LUT 快速应用对比度（内联优化版本）
-      const applyContrastInPlace = (data: Uint8ClampedArray) => {
+      // CPU 回退：使用 LUT 快速应用对比度
+      const applyContrastCPU = (data: Uint8ClampedArray) => {
+        if (!contrastLUT) return;
         const len = data.length;
-        // 使用更大的批处理，减少循环开销
         for (let i = 0; i < len; i += 16) {
-          // 每次处理 4 个像素
           data[i] = contrastLUT[data[i]];
           data[i + 1] = contrastLUT[data[i + 1]];
           data[i + 2] = contrastLUT[data[i + 2]];
@@ -440,6 +711,8 @@ export class WebAVWrapper {
         }
       };
 
+      console.log(`[WebAV] 使用 ${useWebGL ? 'WebGL 硬件加速' : 'CPU'} 处理对比度`);
+
       // 批量提取帧，减少进度更新频率
       const progressUpdateInterval = Math.max(1, Math.floor(totalOutputFrames / 20));
       
@@ -453,16 +726,25 @@ export class WebAVWrapper {
         if (state === "done") break;
         
         if (video != null && state === "success") {
-          // 直接绘制，不清除（会被覆盖）
-          ctx.drawImage(video, 0, 0, video.codedWidth, video.codedHeight, 0, 0, width, height);
-          video.close();
+          let processedPixels: Uint8ClampedArray | null = null;
 
-          // 获取像素数据并应用对比度
-          const imageData = ctx.getImageData(0, 0, width, height);
-          applyContrastInPlace(imageData.data);
+          if (useWebGL) {
+            // WebGL 硬件加速处理
+            processedPixels = glRenderer.processFrame(video, contrast);
+            video.close();
+          }
           
-          // 存储处理后的像素数据（复制一份）
-          frameBuffers[actualFrameCount] = new Uint8ClampedArray(imageData.data);
+          if (!processedPixels) {
+            // CPU 回退处理
+            ctx.drawImage(video, 0, 0, video.codedWidth, video.codedHeight, 0, 0, width, height);
+            if (video.close) video.close();
+            
+            const imageData = ctx.getImageData(0, 0, width, height);
+            applyContrastCPU(imageData.data);
+            processedPixels = new Uint8ClampedArray(imageData.data);
+          }
+          
+          frameBuffers[actualFrameCount] = processedPixels;
           actualFrameCount++;
         }
 
@@ -470,10 +752,12 @@ export class WebAVWrapper {
         if (i % progressUpdateInterval === 0) {
           const progress = 15 + (i / totalOutputFrames) * 40;
           this.updateProgress(Math.min(55, progress));
-          // 让出控制权
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
+
+      // 清理 WebGL 资源
+      glRenderer.destroy();
 
       console.log("[WebAV] 帧处理完成，共", actualFrameCount, "帧");
       this.updateProgress(60);
