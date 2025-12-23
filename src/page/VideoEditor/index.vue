@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRouter } from "vue-router";
-import { VideoEditor } from "../../package/Video/Video";
+import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video";
 import TimeLine from "../../components/TimeLine.vue";
 
 const router = useRouter();
@@ -20,10 +20,11 @@ const isFFmpegLoaded = ref<boolean>(false);
 const isFFmpegLoading = ref<boolean>(false);
 const ffmpegLoadProgress = ref<number>(0);
 const ffmpegLoadError = ref<string>("");
+const processingMode = ref<VideoProcessingMode | null>(null); // 处理模式，初始为 null，用户选择后才设置
 
 // 初始化 VideoEditor
-const initFFmpeg = async () => {
-	videoEditor.value = new VideoEditor();
+const initFFmpeg = async (mode: VideoProcessingMode) => {
+	videoEditor.value = new VideoEditor(mode);
 	isFFmpegLoading.value = true;
 	isFFmpegLoaded.value = false;
 	ffmpegLoadError.value = "";
@@ -53,9 +54,34 @@ const initFFmpeg = async () => {
 	}
 };
 
-onMounted(() => {
-	initFFmpeg();
-});
+// 选择处理模式（首次选择或切换模式）
+const selectMode = async (mode: VideoProcessingMode) => {
+	// 如果正在处理，不允许切换
+	if (isProcessing.value) {
+		alert("正在处理视频，请等待处理完成后再切换模式");
+		return;
+	}
+
+	// 如果已加载且模式相同，直接返回
+	if (videoEditor.value && isFFmpegLoaded.value && processingMode.value === mode) {
+		return;
+	}
+
+	// 如果已加载，先销毁旧实例
+	if (videoEditor.value && isFFmpegLoaded.value) {
+		await videoEditor.value.destroy();
+	}
+
+	// 设置模式
+	processingMode.value = mode;
+
+	// 清除视频（切换模式需要重新初始化）
+	clearVideo();
+
+	// 初始化
+	await initFFmpeg(mode);
+};
+
 
 // 返回首页
 const goToHome = () => {
@@ -123,7 +149,7 @@ const applySpeed = async () => {
 	}
 
 	if (!isFFmpegLoaded.value) {
-		alert("FFmpeg 正在加载中，请稍候...");
+		alert(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
 		return;
 	}
 
@@ -169,7 +195,21 @@ const applySpeed = async () => {
 
 		// 创建新的视频 URL
 		const newVideoUrl = URL.createObjectURL(outputBlob);
+		
+		// 释放旧的 Object URL（如果存在且是 blob URL）
+		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
+			URL.revokeObjectURL(videoUrl.value);
+		}
+		
 		videoUrl.value = newVideoUrl;
+
+		// 等待 DOM 更新后再强制视频元素重新加载
+		await nextTick();
+		if (videoElement.value) {
+			// 重新设置 src 并加载
+			videoElement.value.src = newVideoUrl;
+			videoElement.value.load();
+		}
 
 		// 更新 videoFile 为处理后的文件
 		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
@@ -205,7 +245,7 @@ const applyContrast = async () => {
 	}
 
 	if (!isFFmpegLoaded.value) {
-		alert("FFmpeg 正在加载中，请稍候...");
+		alert(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
 		return;
 	}
 
@@ -251,7 +291,21 @@ const applyContrast = async () => {
 
 		// 创建新的视频 URL
 		const newVideoUrl = URL.createObjectURL(outputBlob);
+		
+		// 释放旧的 Object URL（如果存在且是 blob URL）
+		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
+			URL.revokeObjectURL(videoUrl.value);
+		}
+		
 		videoUrl.value = newVideoUrl;
+
+		// 等待 DOM 更新后再强制视频元素重新加载
+		await nextTick();
+		if (videoElement.value) {
+			// 重新设置 src 并加载
+			videoElement.value.src = newVideoUrl;
+			videoElement.value.load();
+		}
 
 		// 更新 videoFile 为处理后的文件
 		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
@@ -297,36 +351,63 @@ const downloadVideo = () => {
 
 <template>
 	<div class="video-editor-container">
-		<!-- FFmpeg 加载遮罩层 -->
-		<div v-if="isFFmpegLoading" class="loading-overlay">
+		<!-- 模式选择界面（未选择模式时显示） -->
+		<div v-if="!processingMode && !isFFmpegLoading" class="mode-selection-overlay">
+			<div class="mode-selection-content">
+				<h1 class="mode-selection-title">选择处理模式</h1>
+				<p class="mode-selection-hint">请选择一种视频处理模式开始使用</p>
+				<div class="mode-selection-buttons">
+					<button @click="selectMode('ffmpeg')" class="mode-selection-button ffmpeg-mode">
+						<div class="mode-icon">🎬</div>
+						<div class="mode-name">FFmpeg</div>
+						<div class="mode-description">基于 WebAssembly，功能强大，兼容性好</div>
+					</button>
+					<button @click="selectMode('webav')" class="mode-selection-button webav-mode">
+						<div class="mode-icon">⚡</div>
+						<div class="mode-name">WebAV</div>
+						<div class="mode-description">基于 WebCodecs，性能优异，需要现代浏览器</div>
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 加载遮罩层 -->
+		<div v-else-if="isFFmpegLoading" class="loading-overlay">
 			<div class="loading-content">
 				<div class="loading-spinner"></div>
-				<h2 class="loading-title">正在加载 FFmpeg...</h2>
+				<h2 class="loading-title">正在加载 {{ processingMode === 'ffmpeg' ? 'FFmpeg' : 'WebAV' }}...</h2>
 				<div class="loading-progress-bar">
 					<div class="loading-progress-fill" :style="{ width: `${ffmpegLoadProgress}%` }"></div>
 				</div>
 				<p class="loading-text">{{ ffmpegLoadProgress }}%</p>
-				<p class="loading-hint">首次加载可能需要一些时间，请耐心等待</p>
+				<p class="loading-hint">
+					{{ processingMode === 'ffmpeg' ? '首次加载可能需要一些时间，请耐心等待' : '正在检查 WebCodecs 支持...' }}
+				</p>
 			</div>
 		</div>
 
-		<!-- FFmpeg 加载失败页面 -->
-		<div v-else-if="ffmpegLoadError && !isFFmpegLoaded" class="error-overlay">
+		<!-- 加载失败页面 -->
+		<div v-else-if="ffmpegLoadError && !isFFmpegLoaded && processingMode" class="error-overlay">
 			<div class="error-content">
 				<div class="error-icon">❌</div>
-				<h2 class="error-title">FFmpeg 加载失败</h2>
+				<h2 class="error-title">{{ processingMode === 'ffmpeg' ? 'FFmpeg' : 'WebAV' }} 加载失败</h2>
 				<p class="error-message">{{ ffmpegLoadError }}</p>
 				<div class="error-hints">
 					<p>可能的原因：</p>
 					<ul>
-						<li>网络连接不稳定</li>
-						<li>CDN 资源加载失败</li>
-						<li>浏览器不支持 WebAssembly</li>
+						<li v-if="processingMode === 'ffmpeg'">网络连接不稳定</li>
+						<li v-if="processingMode === 'ffmpeg'">CDN 资源加载失败</li>
+						<li v-if="processingMode === 'ffmpeg'">浏览器不支持 WebAssembly</li>
+						<li v-if="processingMode === 'webav'">浏览器不支持 WebCodecs API</li>
+						<li v-if="processingMode === 'webav'">请使用 Chrome 94+ 或 Edge 94+ 浏览器</li>
 					</ul>
 				</div>
 				<div class="error-actions">
-					<button @click="initFFmpeg" class="retry-button">
+					<button @click="selectMode(processingMode!)" class="retry-button">
 						🔄 重新加载
+					</button>
+					<button @click="processingMode = null; isFFmpegLoaded = false; ffmpegLoadError = ''" class="back-button">
+						↩️ 重新选择模式
 					</button>
 					<button @click="goToHome" class="back-button">
 						🏠 返回首页
@@ -336,12 +417,36 @@ const downloadVideo = () => {
 		</div>
 
 		<!-- 主界面（仅在加载成功后显示） -->
-		<template v-if="isFFmpegLoaded">
+		<template v-else-if="isFFmpegLoaded && processingMode">
 			<div class="editor-header">
 				<h1 class="editor-title">视频编辑器</h1>
-				<div v-if="isFFmpegLoaded" class="ffmpeg-status">
-					<span class="status-indicator"></span>
-					<span class="status-text">FFmpeg 已就绪</span>
+				<div class="header-controls">
+					<!-- 模式选择 -->
+					<div class="mode-selector">
+						<label class="mode-label">处理模式：</label>
+						<div class="mode-buttons">
+							<button
+								@click="selectMode('ffmpeg')"
+								class="mode-button"
+								:class="{ active: processingMode === 'ffmpeg' }"
+								:disabled="isProcessing || isFFmpegLoading"
+							>
+								FFmpeg
+							</button>
+							<button
+								@click="selectMode('webav')"
+								class="mode-button"
+								:class="{ active: processingMode === 'webav' }"
+								:disabled="isProcessing || isFFmpegLoading"
+							>
+								WebAV
+							</button>
+						</div>
+					</div>
+					<div v-if="isFFmpegLoaded && processingMode" class="ffmpeg-status">
+						<span class="status-indicator"></span>
+						<span class="status-text">{{ processingMode === 'ffmpeg' ? 'FFmpeg' : 'WebAV' }} 已就绪</span>
+					</div>
 				</div>
 			</div>
 
@@ -481,12 +586,69 @@ const downloadVideo = () => {
 .editor-header {
 	text-align: center;
 	margin-bottom: 30px;
+	width: 100%;
 }
 
 .editor-title {
 	font-size: 2.5rem;
 	font-weight: bold;
 	margin-bottom: 1rem;
+}
+
+.header-controls {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 20px;
+}
+
+.mode-selector {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	background: rgba(255, 255, 255, 0.1);
+	padding: 12px 20px;
+	border-radius: 12px;
+	backdrop-filter: blur(10px);
+}
+
+.mode-label {
+	font-size: 16px;
+	font-weight: 600;
+	opacity: 0.9;
+}
+
+.mode-buttons {
+	display: flex;
+	gap: 8px;
+}
+
+.mode-button {
+	padding: 8px 20px;
+	background: rgba(255, 255, 255, 0.2);
+	color: white;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 600;
+	transition: all 0.3s ease;
+}
+
+.mode-button:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.3);
+	transform: translateY(-2px);
+}
+
+.mode-button.active {
+	background: #667eea;
+	border-color: #667eea;
+	box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.mode-button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 .ffmpeg-status {
@@ -864,7 +1026,7 @@ const downloadVideo = () => {
 /* FFmpeg 加载遮罩层样式 */
 .loading-overlay {
 	position: fixed;
-	top: 0;
+	top: 60px; /* 从导航栏下方开始 */
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -872,7 +1034,7 @@ const downloadVideo = () => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 9999;
+	z-index: 999; /* 低于导航栏的 z-index: 1000 */
 }
 
 .loading-content {
@@ -943,7 +1105,7 @@ const downloadVideo = () => {
 /* FFmpeg 加载失败页面样式 */
 .error-overlay {
 	position: fixed;
-	top: 0;
+	top: 60px; /* 从导航栏下方开始 */
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -951,7 +1113,7 @@ const downloadVideo = () => {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 9999;
+	z-index: 999; /* 低于导航栏的 z-index: 1000 */
 }
 
 .error-content {
@@ -1254,5 +1416,121 @@ const downloadVideo = () => {
 	gap: 12px;
 	justify-content: center;
 	margin-top: 20px;
+}
+
+/* 模式选择界面样式 */
+.mode-selection-overlay {
+	position: fixed;
+	top: 60px; /* 从导航栏下方开始 */
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 999; /* 低于导航栏的 z-index: 1000 */
+}
+
+.mode-selection-content {
+	text-align: center;
+	padding: 60px 40px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 24px;
+	backdrop-filter: blur(10px);
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+	max-width: 800px;
+	width: 90%;
+}
+
+.mode-selection-title {
+	font-size: 2.5rem;
+	font-weight: bold;
+	margin-bottom: 16px;
+	color: white;
+}
+
+.mode-selection-hint {
+	font-size: 1.1rem;
+	opacity: 0.9;
+	color: white;
+	margin-bottom: 40px;
+}
+
+.mode-selection-buttons {
+	display: flex;
+	gap: 30px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+
+.mode-selection-button {
+	flex: 1;
+	min-width: 280px;
+	max-width: 350px;
+	padding: 40px 30px;
+	background: rgba(255, 255, 255, 0.15);
+	border: 3px solid rgba(255, 255, 255, 0.3);
+	border-radius: 20px;
+	cursor: pointer;
+	transition: all 0.3s ease;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 16px;
+}
+
+.mode-selection-button:hover {
+	background: rgba(255, 255, 255, 0.25);
+	border-color: rgba(255, 255, 255, 0.5);
+	transform: translateY(-5px);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.mode-selection-button.ffmpeg-mode:hover {
+	border-color: #667eea;
+	box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+}
+
+.mode-selection-button.webav-mode:hover {
+	border-color: #4caf50;
+	box-shadow: 0 10px 30px rgba(76, 175, 80, 0.4);
+}
+
+.mode-icon {
+	font-size: 4rem;
+	margin-bottom: 8px;
+}
+
+.mode-name {
+	font-size: 1.8rem;
+	font-weight: bold;
+	color: white;
+}
+
+.mode-description {
+	font-size: 1rem;
+	color: rgba(255, 255, 255, 0.85);
+	line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+	.mode-selection-buttons {
+		flex-direction: column;
+		gap: 20px;
+	}
+
+	.mode-selection-button {
+		min-width: 100%;
+		max-width: 100%;
+	}
+
+	.mode-selection-title {
+		font-size: 2rem;
+	}
+
+	.mode-selection-content {
+		padding: 40px 20px;
+	}
 }
 </style>

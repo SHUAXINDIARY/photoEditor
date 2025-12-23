@@ -1,19 +1,82 @@
 import { FFmpegWrapper } from "./ffmpeg";
+import { WebAVWrapper } from "./webav";
+
+/**
+ * 视频处理模式
+ */
+export type VideoProcessingMode = "ffmpeg" | "webav";
+
+/**
+ * 视频处理包装器接口
+ */
+interface VideoWrapper {
+  load(): Promise<void>;
+  getProgress(): number;
+  setProgressCallback(callback: ((progress: number) => void) | null): void;
+  changeSpeed(inputFile: File, speed: number): Promise<Blob>;
+  changeContrast(inputFile: File, contrast: number): Promise<Blob>;
+  applyFilters(inputFile: File, options: { speed?: number; contrast?: number }): Promise<Blob>;
+  destroy(): Promise<void>;
+}
 
 /**
  * 视频编辑器类，提供业务层接口
- * 内部使用 FFmpegWrapper 进行实际的视频处理
+ * 支持 FFmpeg 和 WebAV 两种底层实现
  */
 export class VideoEditor {
-  private ffmpegWrapper: FFmpegWrapper;
+  private wrapper: VideoWrapper;
+  private mode: VideoProcessingMode;
   private isLoading: boolean = false;
   private isLoaded: boolean = false;
   private loadProgress: number = 0;
   private loadError: string = "";
   private progressInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
-    this.ffmpegWrapper = new FFmpegWrapper();
+  constructor(mode: VideoProcessingMode = "ffmpeg") {
+    this.mode = mode;
+    this.wrapper = this.createWrapper(mode);
+  }
+
+  /**
+   * 创建对应的包装器实例
+   */
+  private createWrapper(mode: VideoProcessingMode): VideoWrapper {
+    switch (mode) {
+      case "webav":
+        return new WebAVWrapper();
+      case "ffmpeg":
+      default:
+        return new FFmpegWrapper();
+    }
+  }
+
+  /**
+   * 获取当前模式
+   */
+  getMode(): VideoProcessingMode {
+    return this.mode;
+  }
+
+  /**
+   * 切换模式（需要重新初始化）
+   */
+  async switchMode(mode: VideoProcessingMode): Promise<void> {
+    if (this.mode === mode) {
+      return;
+    }
+
+    // 销毁旧的包装器
+    if (this.wrapper) {
+      await this.wrapper.destroy();
+    }
+
+    // 创建新的包装器
+    this.mode = mode;
+    this.wrapper = this.createWrapper(mode);
+    this.isLoaded = false;
+    this.isLoading = false;
+    this.loadProgress = 0;
+    this.loadError = "";
   }
 
   /**
@@ -28,7 +91,7 @@ export class VideoEditor {
 
     try {
       // 设置进度回调
-      this.ffmpegWrapper.setProgressCallback((progress) => {
+      this.wrapper.setProgressCallback((progress) => {
         this.loadProgress = progress;
         if (onProgress) {
           onProgress(progress);
@@ -36,16 +99,19 @@ export class VideoEditor {
       });
 
       // 模拟加载进度（因为 load 过程可能没有实时进度）
-      this.progressInterval = setInterval(() => {
-        if (this.loadProgress < 90) {
-          this.loadProgress += 10;
-          if (onProgress) {
-            onProgress(this.loadProgress);
+      // WebAV 模式不需要模拟进度，因为它有自己的进度管理
+      if (this.mode === "ffmpeg") {
+        this.progressInterval = setInterval(() => {
+          if (this.loadProgress < 90) {
+            this.loadProgress += 10;
+            if (onProgress) {
+              onProgress(this.loadProgress);
+            }
           }
-        }
-      }, 200);
+        }, 200);
+      }
 
-      await this.ffmpegWrapper.load();
+      await this.wrapper.load();
 
       // 加载完成，设置进度为 100%
       if (this.progressInterval) {
@@ -73,16 +139,16 @@ export class VideoEditor {
       throw error;
     } finally {
       // 清除进度回调
-      this.ffmpegWrapper.setProgressCallback(null);
+      this.wrapper.setProgressCallback(null);
     }
   }
 
   /**
-   * 初始化 FFmpeg（加载核心文件）
+   * 初始化（加载核心文件）
    * @deprecated 使用 init() 方法替代
    */
   async load(): Promise<void> {
-    await this.ffmpegWrapper.load();
+    await this.wrapper.load();
   }
 
   /**
@@ -126,14 +192,14 @@ export class VideoEditor {
     onProgress?: (progress: number) => void
   ): Promise<Blob> {
     // 设置进度回调
-    this.ffmpegWrapper.setProgressCallback(onProgress || null);
+    this.wrapper.setProgressCallback(onProgress || null);
 
     try {
-      const result = await this.ffmpegWrapper.changeSpeed(inputFile, speed);
+      const result = await this.wrapper.changeSpeed(inputFile, speed);
       return result;
     } finally {
       // 清除进度回调
-      this.ffmpegWrapper.setProgressCallback(null);
+      this.wrapper.setProgressCallback(null);
     }
   }
 
@@ -150,14 +216,14 @@ export class VideoEditor {
     onProgress?: (progress: number) => void
   ): Promise<Blob> {
     // 设置进度回调
-    this.ffmpegWrapper.setProgressCallback(onProgress || null);
+    this.wrapper.setProgressCallback(onProgress || null);
 
     try {
-      const result = await this.ffmpegWrapper.changeContrast(inputFile, contrast);
+      const result = await this.wrapper.changeContrast(inputFile, contrast);
       return result;
     } finally {
       // 清除进度回调
-      this.ffmpegWrapper.setProgressCallback(null);
+      this.wrapper.setProgressCallback(null);
     }
   }
 
@@ -176,21 +242,21 @@ export class VideoEditor {
     onProgress?: (progress: number) => void
   ): Promise<Blob> {
     // 设置进度回调
-    this.ffmpegWrapper.setProgressCallback(onProgress || null);
+    this.wrapper.setProgressCallback(onProgress || null);
 
     try {
-      const result = await this.ffmpegWrapper.applyFilters(inputFile, options);
+      const result = await this.wrapper.applyFilters(inputFile, options);
       return result;
     } finally {
       // 清除进度回调
-      this.ffmpegWrapper.setProgressCallback(null);
+      this.wrapper.setProgressCallback(null);
     }
   }
 
   /**
-   * 销毁 FFmpeg 实例
+   * 销毁实例
    */
   async destroy(): Promise<void> {
-    await this.ffmpegWrapper.destroy();
+    await this.wrapper.destroy();
   }
 }
