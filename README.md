@@ -3,7 +3,7 @@
 这是一个基于 **Vue 3 + TypeScript + Rspack/Vite** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
 
 - **图片编辑器**：使用 **Konva** 实现，支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
-- **视频编辑器**：使用 **FFmpeg.wasm** 实现，支持视频倍速调整、对比度调节，效果可叠加使用，并提供实时进度显示和视频预览功能。
+- **视频编辑器**：支持 **FFmpeg.wasm** 和 **WebAV（WebCodecs）** 两种处理模式，支持视频倍速调整、对比度调节，效果可叠加使用，并提供实时进度显示和视频预览功能。
 
 ## 功能概览
 
@@ -59,10 +59,14 @@
   - **效果叠加**：倍速和对比度可以同时应用，互不覆盖
   - **智能状态管理**：应用效果时自动保留已应用的其他效果设置
 
-- **FFmpeg.wasm 集成**
-  - 基于 WebAssembly 的 FFmpeg，完全前端运行
-  - 首次加载显示进度条，支持加载失败重试
-  - 使用 `@ffmpeg/ffmpeg` 和 `@ffmpeg/core-mt` 多线程版本，提升处理性能
+- **处理模式选择**
+  - **FFmpeg 模式**：基于 WebAssembly 的 FFmpeg，功能完整，兼容性好
+    - 首次加载显示进度条，支持加载失败重试
+    - 使用 `@ffmpeg/ffmpeg` 和 `@ffmpeg/core-mt` 多线程版本，提升处理性能
+  - **WebAV 模式**：基于 WebCodecs API，性能更优，无需预加载
+    - 使用 `@webav/av-cliper` 库，基于浏览器原生 WebCodecs API
+    - 支持硬件加速，处理速度更快
+    - 需要浏览器支持 WebCodecs API（Chrome 94+、Edge 94+）
 
 - **处理与导出**
   - 实时处理进度显示（0-100%）
@@ -86,10 +90,15 @@
   - `Konva.Stage` / `Konva.Layer` / `Konva.Image` / `Konva.Transformer`
   - `Konva.Line` 用于画笔轨迹
   - 自定义滤镜注册到 `Konva.Filters`
-- **视频处理**：FFmpeg.wasm
-  - `@ffmpeg/ffmpeg`：FFmpeg WebAssembly 封装
-  - `@ffmpeg/core-mt`：多线程核心，提升处理性能
-  - `@ffmpeg/util`：工具函数（fetchFile、toBlobURL 等）
+- **视频处理**：
+  - **FFmpeg.wasm**（可选）
+    - `@ffmpeg/ffmpeg`：FFmpeg WebAssembly 封装
+    - `@ffmpeg/core-mt`：多线程核心，提升处理性能
+    - `@ffmpeg/util`：工具函数（fetchFile、toBlobURL 等）
+  - **WebAV（WebCodecs）**（可选）
+    - `@webav/av-cliper`：基于 WebCodecs 的视频、音频、图片合成库
+    - 使用浏览器原生 `VideoEncoder`、`VideoDecoder` API
+    - 支持硬件加速，性能更优
 - **工具函数**：自定义 `throttle` / `debounce`（位于 `src/utils/utils.ts`）
 - **本地存储**：`localStorage`（图片 Base64 + 调节参数 + 位置/缩放）
 
@@ -108,7 +117,13 @@ src/
       index.vue              # 图片编辑器页面组件
     VideoEditor/
       index.vue              # 视频编辑器页面组件
-      Video.ts                # 视频编辑器核心类（FFmpeg 封装）
+  package/
+    Video/
+      Video.ts               # 视频编辑器核心类（抽象层，支持 FFmpeg 和 WebAV）
+      ffmpeg/
+        index.ts             # FFmpeg 实现（FFmpegWrapper）
+      webav/
+        index.ts             # WebAV 实现（WebAVWrapper）
   components/
     TimeLine.vue             # 视频时间轴组件
   utils/
@@ -129,7 +144,7 @@ src/
 - **`VideoEditor/index.vue`**：视频编辑器页面，负责 UI、状态管理和与 VideoEditor 交互
 - **`ImageEditor` 类**：负责基础画布能力（Stage/Layer 管理、图片加载、画笔绘制、导出等）
 - **`ImageFilterManager` 类**：独立管理所有滤镜效果（对比度、色温、饱和度、模糊、增强），与画布能力解耦
-- **`VideoEditor` 类**：封装 FFmpeg.wasm，提供视频处理能力（倍速、对比度等）
+- **`VideoEditor` 类**：视频编辑器抽象层，支持 FFmpeg 和 WebAV 两种底层实现，提供统一的视频处理接口（倍速、对比度等）
 
 ### 组件与类的职责划分
 
@@ -165,23 +180,38 @@ src/
 #### 视频编辑器模块
 
 - **`VideoEditor/index.vue`**
-  - 持有响应式状态：`speed`、`contrast`、`appliedSpeed`、`appliedContrast` 等
-  - 管理 FFmpeg 加载状态和进度显示
+  - 持有响应式状态：`speed`、`contrast`、`appliedSpeed`、`appliedContrast`、`processingMode` 等
+  - 管理处理模式选择（FFmpeg 或 WebAV）
+  - 管理底层处理引擎的加载状态和进度显示
   - 负责视频文件上传和预览
   - 控制倍速和对比度调整，调用 `VideoEditor` 的处理方法
   - 实现效果叠加逻辑：应用新效果时保留已应用的其他效果
   - 处理进度显示和错误处理
   - 提供视频下载功能
 
-- **`VideoEditor` 类**
-  - 封装 FFmpeg.wasm 实例，管理加载状态
+- **`VideoEditor` 类**（抽象层）
+  - 支持动态切换处理模式（FFmpeg 或 WebAV）
+  - 封装底层处理引擎（`FFmpegWrapper` 或 `WebAVWrapper`），提供统一接口
+  - 管理加载状态和进度
   - 提供视频处理能力：
-    - `changeSpeed(inputFile, speed)`：调整视频倍速
-    - `changeContrast(inputFile, contrast)`：调整视频对比度
+    - `changeSpeedWithProgress(inputFile, speed, onProgress)`：调整视频倍速
+    - `changeContrastWithProgress(inputFile, contrast, onProgress)`：调整视频对比度
     - `applyFilters(inputFile, options, onProgress)`：同时应用多个效果（倍速 + 对比度）
   - 支持进度回调，实时更新处理进度
-  - 自动管理临时文件，处理完成后清理
-  - 错误处理和资源清理
+  - 自动管理资源，处理完成后清理
+
+- **`FFmpegWrapper` 类**（`package/Video/ffmpeg/index.ts`）
+  - 封装 FFmpeg.wasm 实例，管理加载状态
+  - 实现 `VideoWrapper` 接口，提供 FFmpeg 底层处理能力
+  - 使用 FFmpeg 滤镜链实现倍速和对比度调整
+  - 支持进度回调和错误处理
+
+- **`WebAVWrapper` 类**（`package/Video/webav/index.ts`）
+  - 基于 WebCodecs API 和 `@webav/av-cliper` 库
+  - 实现 `VideoWrapper` 接口，提供 WebAV 底层处理能力
+  - 使用 `MP4Clip`、`Combinator`、`OffscreenSprite` 实现视频处理
+  - 通过手动 seek 和帧替换实现真正的倍速效果
+  - 支持进度回调和错误处理
 
 ### 数据流与状态持久化
 
@@ -300,7 +330,9 @@ this.filterManager = new ImageFilterManager();
 
 ## 本地开发与构建
 
-> ffmpeg.wasm 由于默认开启多线程加载，Rspack中不支持通过URL初始化worker，所以使用vite启动才能正常跑
+> **注意**：
+> - FFmpeg.wasm 由于默认开启多线程加载，Rspack 中不支持通过 URL 初始化 worker，所以使用 vite 启动才能正常跑
+> - WebAV 模式需要浏览器支持 WebCodecs API（Chrome 94+、Edge 94+），在支持的浏览器中无需预加载，性能更优
 
 ### 安装依赖
 
@@ -339,7 +371,24 @@ pnpm run preview
 
 ## 视频编辑器核心实现说明
 
-### `VideoEditor` 类关键逻辑
+### `VideoEditor` 类关键逻辑（抽象层）
+
+- **模式切换机制**
+  - 支持动态切换处理模式（FFmpeg 或 WebAV）
+  - 切换模式时自动销毁旧实例并创建新实例
+  - 提供统一的接口，隐藏底层实现差异
+
+- **初始化流程**
+  - 根据选择的模式创建对应的 `VideoWrapper` 实例
+  - 调用 `init()` 方法加载底层引擎（FFmpeg 需要加载核心文件，WebAV 只需检查浏览器支持）
+  - 支持进度回调和错误处理
+
+- **视频处理流程**
+  - 统一通过 `applyFilters` 方法处理视频
+  - 自动将调用转发到底层 `VideoWrapper` 实现
+  - 支持进度回调和错误处理
+
+### `FFmpegWrapper` 类关键逻辑
 
 - **FFmpeg 初始化**
   - 使用 `@ffmpeg/core-mt` 多线程版本，提升处理性能
@@ -358,12 +407,31 @@ pnpm run preview
   - `applyFilters` 方法支持同时应用多个效果
   - 使用 FFmpeg 滤镜链：`eq=contrast=值,setpts=倍速*PTS`
   - 先应用图像处理（对比度），再应用时间处理（倍速）
-  - 状态管理：维护 `appliedSpeed` 和 `appliedContrast`，确保效果不丢失
+
+### `WebAVWrapper` 类关键逻辑
+
+- **WebAV 初始化**
+  - 检查浏览器 WebCodecs API 支持（`VideoEncoder`、`VideoDecoder`）
+  - 无需预加载，初始化速度快
+  - 使用 `@webav/av-cliper` 库进行视频处理
+
+- **倍速实现**
+  - 通过 `MP4Clip.tick()` 手动 seek 到源视频的指定时间点
+  - 对于输出的每一帧，计算对应的源视频时间：`sourceTime = outputTime * speed`
+  - 提取所有需要的帧并保存为 `ImageData`
+  - 使用 `tickInterceptor` 将原始帧替换为预处理好的帧
+  - 通过 `Combinator` 编码输出视频
+
+- **对比度实现**
+  - 在 `tickInterceptor` 中对每一帧应用对比度滤镜
+  - 使用 Canvas `getImageData` 和像素级处理
+  - 分块处理像素，避免长时间阻塞 UI
 
 - **性能优化**
-  - 使用多线程 FFmpeg 核心，充分利用 Web Worker
-  - 进度回调使用节流，避免频繁更新 UI
-  - 临时文件自动清理，避免内存泄漏
+  - 批量处理帧，定期让出控制权（`setTimeout(resolve, 0)`）
+  - 使用 `OffscreenCanvas` 进行离屏渲染
+  - 支持硬件加速（取决于浏览器和硬件）
+  - 自动清理资源，避免内存泄漏
 
 ## 后续可扩展方向
 
