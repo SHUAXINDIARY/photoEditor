@@ -1,5 +1,7 @@
 ## 项目简介
 
+> [UI参考](https://www.figma.com/design/iA61lfnhW5C4xfg16MU5f6/Video-editing-dashboard--Community-?node-id=86001-16196&t=Om8MAQyMln7CSPIE-0)
+
 这是一个基于 **Vue 3 + TypeScript + Rspack/Vite** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
 
 - **图片编辑器**：使用 **Konva** 实现，支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
