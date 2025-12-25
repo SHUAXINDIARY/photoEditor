@@ -1,13 +1,7 @@
-/**
- * 视频滤镜参数（用于 GPU 处理）
- */
-export interface FilterParams {
-  contrast: number;
-  saturation: number;
-  temperature: number;
-  shadows: number;
-  highlights: number;
-}
+import { VERTEX_SHADER, FRAGMENT_SHADER, type FilterParams } from "../shaders";
+
+// 重新导出 FilterParams 类型，保持兼容性
+export type { FilterParams };
 
 /**
  * GPU 渲染器接口
@@ -22,6 +16,7 @@ export interface IGPURenderer {
 /**
  * WebGL 硬件加速渲染器
  * 使用 GPU 并行处理像素，支持多种滤镜效果
+ * 着色器代码从 shaders.ts 导入，与预览组件共享
  */
 export class WebGLFilterRenderer implements IGPURenderer {
   private canvas: OffscreenCanvas;
@@ -42,72 +37,6 @@ export class WebGLFilterRenderer implements IGPURenderer {
   private temperatureLocation: WebGLUniformLocation | null = null;
   private shadowsLocation: WebGLUniformLocation | null = null;
   private highlightsLocation: WebGLUniformLocation | null = null;
-
-  // 顶点着色器
-  private static readonly VERTEX_SHADER = `
-    attribute vec2 a_position;
-    attribute vec2 a_texCoord;
-    varying vec2 v_texCoord;
-    void main() {
-      gl_Position = vec4(a_position, 0.0, 1.0);
-      v_texCoord = a_texCoord;
-    }
-  `;
-
-  // 片段着色器 - 统一滤镜算法（与预览组件和 FFmpeg 保持一致）
-  private static readonly FRAGMENT_SHADER = `
-    precision mediump float;
-    uniform sampler2D u_texture;
-    uniform float u_contrast;
-    uniform float u_saturation;
-    uniform float u_temperature;
-    uniform float u_shadows;
-    uniform float u_highlights;
-    varying vec2 v_texCoord;
-    
-    void main() {
-      vec4 color = texture2D(u_texture, v_texCoord);
-      vec3 rgb = color.rgb;
-      
-      // 1. 对比度调整 (与 FFmpeg eq=contrast 一致)
-      rgb = (rgb - 0.5) * u_contrast + 0.5;
-      
-      // 2. 饱和度调整 (与 FFmpeg eq=saturation 一致)
-      float gray = dot(rgb, vec3(0.299, 0.587, 0.114));
-      rgb = mix(vec3(gray), rgb, u_saturation);
-      
-      // 3. 阴影调整 - 使用 gamma 曲线 (与 FFmpeg eq=gamma 一致)
-      // shadows > 1 提亮暗部, shadows < 1 压暗暗部
-      if (u_shadows != 1.0) {
-        float gamma = 1.0 / pow(u_shadows, 0.6);
-        rgb = pow(rgb, vec3(gamma));
-      }
-      
-      // 4. 高光调整 - 使用 brightness (与 FFmpeg eq=brightness 一致)
-      if (u_highlights != 1.0) {
-        float brightness = (u_highlights - 1.0) * 0.3;
-        rgb = rgb + brightness;
-      }
-      
-      // 5. 色温调整 (与 FFmpeg colorbalance 一致)
-      if (u_temperature != 0.0) {
-        if (u_temperature > 0.0) {
-          // 暖色调：增加红/黄，减少蓝
-          rgb.r = rgb.r + u_temperature * 0.15;
-          rgb.g = rgb.g + u_temperature * 0.05;
-          rgb.b = rgb.b - u_temperature * 0.15;
-        } else {
-          // 冷色调：减少红，增加蓝
-          float cool = abs(u_temperature);
-          rgb.r = rgb.r - cool * 0.1;
-          rgb.g = rgb.g - cool * 0.02;
-          rgb.b = rgb.b + cool * 0.15;
-        }
-      }
-      
-      gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), color.a);
-    }
-  `;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -134,9 +63,9 @@ export class WebGLFilterRenderer implements IGPURenderer {
 
     const gl = this.gl;
 
-    // 编译着色器
-    const vertexShader = this.compileShader(gl.VERTEX_SHADER, WebGLFilterRenderer.VERTEX_SHADER);
-    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, WebGLFilterRenderer.FRAGMENT_SHADER);
+    // 编译着色器（使用共享的着色器代码）
+    const vertexShader = this.compileShader(gl.VERTEX_SHADER, VERTEX_SHADER);
+    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
 
     if (!vertexShader || !fragmentShader) {
       console.warn("[WebGL] 着色器编译失败");
@@ -160,12 +89,12 @@ export class WebGLFilterRenderer implements IGPURenderer {
 
     // 设置顶点数据
     const positions = new Float32Array([
-      -1, -1,  1, -1,  -1, 1,
-      -1, 1,   1, -1,   1, 1,
+      -1, -1, 1, -1, -1, 1,
+      -1, 1, 1, -1, 1, 1,
     ]);
     const texCoords = new Float32Array([
-      0, 1,  1, 1,  0, 0,
-      0, 0,  1, 1,  1, 0,
+      0, 1, 1, 1, 0, 0,
+      0, 0, 1, 1, 1, 0,
     ]);
 
     // 位置缓冲
