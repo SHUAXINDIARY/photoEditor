@@ -53,13 +53,19 @@
 - **视频加载与预览**
   - 从本地文件选择视频（支持 MP4、WebM、OGG 等格式）
   - 实时视频预览，支持播放控制
-  - 时间轴组件，显示视频播放进度
+  - 时间轴组件，显示视频播放进度和缩略图
+
+- **实时效果预览**
+  - **倍速实时预览**：拖动滑块时通过 `video.playbackRate` 即时预览倍速效果，无需等待处理
+  - **对比度实时预览**：拖动滑块时通过 CSS `filter: contrast()` 即时预览对比度效果
+  - **时间轴联动**：调整倍速时，时间轴长度自动同步变化（2x 倍速时时间轴缩短一半）
+  - **无延迟体验**：预览效果即时生效，导出时才进行实际视频处理
 
 - **视频处理功能**
-  - **倍速调整**：范围 \[0.25x, 4x]，步长 0.25x，支持预设快速选择
-  - **对比度调整**：范围 \[0.5, 2.0]，步长 0.1
+  - **倍速调整**：范围 \[0.25x, 4x]，步长 0.25x
+  - **对比度调整**：范围 \[0.5, 2.0]，步长 0.05
   - **效果叠加**：倍速和对比度可以同时应用，互不覆盖
-  - **智能状态管理**：应用效果时自动保留已应用的其他效果设置
+  - **一键重置**：快速恢复所有效果到默认值
 
 - **处理模式选择**
   - **FFmpeg 模式**：基于 WebAssembly 的 FFmpeg，功能完整，兼容性好
@@ -70,14 +76,21 @@
     - 支持硬件加速，处理速度更快
     - 需要浏览器支持 WebCodecs API（Chrome 94+、Edge 94+）
 
-- **处理与导出**
+- **导出功能**
+  - 点击「导出视频」时才进行实际视频处理
   - 实时处理进度显示（0-100%）
-  - 处理完成后自动更新预览
-  - 一键下载处理后的视频文件
+  - 自动应用当前设置的倍速和对比度值
+  - 处理完成后自动下载视频文件
   - 支持清除视频，重置所有设置
 
+- **时间轴组件**
+  - 视频缩略图预览（使用 `@webav/av-cliper` 的 `thumbnails` API）
+  - 播放头拖拽定位，支持倍速模式下的正确时间映射
+  - 时间刻度尺，支持缩放控制
+  - 播放/暂停控制，当前时间和总时长显示
+
 - **UX & 交互**
-  - 左侧控制面板：倍速控制、对比度控制、视频信息
+  - 左侧效果调整面板：倍速控制、对比度控制、当前效果提示
   - 右侧视频区域：视频预览 + 时间轴
   - 处理中状态禁用相关操作，避免冲突
   - 现代化渐变背景，清晰的视觉层次
@@ -127,7 +140,8 @@ src/
       webav/
         index.ts             # WebAV 实现（WebAVWrapper）
   components/
-    TimeLine.vue             # 视频时间轴组件
+    TimeLine/
+      TimeLine.vue           # 视频时间轴组件（支持缩略图、倍速联动）
   utils/
     ImageEditor.ts           # Konva 封装的图片编辑器核心类（基础画布能力）
     ImageFilterManager.ts    # 图片滤镜管理模块（与画布能力解耦）
@@ -182,14 +196,16 @@ src/
 #### 视频编辑器模块
 
 - **`VideoEditor/index.vue`**
-  - 持有响应式状态：`speed`、`contrast`、`appliedSpeed`、`appliedContrast`、`processingMode` 等
+  - 持有响应式状态：`speed`、`contrast`、`processingMode` 等
   - 管理处理模式选择（FFmpeg 或 WebAV）
   - 管理底层处理引擎的加载状态和进度显示
   - 负责视频文件上传和预览
-  - 控制倍速和对比度调整，调用 `VideoEditor` 的处理方法
-  - 实现效果叠加逻辑：应用新效果时保留已应用的其他效果
+  - **实时预览机制**：
+    - 倍速：通过 `watch` 监听 `speed` 变化，实时修改 `video.playbackRate`
+    - 对比度：通过 CSS `filter: contrast()` 绑定到视频元素
+  - 导出时调用 `VideoEditor.applyFilters` 进行实际视频处理
   - 处理进度显示和错误处理
-  - 提供视频下载功能
+  - 提供视频导出和重置功能
 
 - **`VideoEditor` 类**（抽象层）
   - 支持动态切换处理模式（FFmpeg 或 WebAV）
@@ -214,6 +230,17 @@ src/
   - 使用 `MP4Clip`、`Combinator`、`OffscreenSprite` 实现视频处理
   - 通过手动 seek 和帧替换实现真正的倍速效果
   - 支持进度回调和错误处理
+
+- **`TimeLine` 组件**（`components/TimeLine/TimeLine.vue`）
+  - 接收 `videoUrl`、`videoElement`、`videoFile`、`speed` 等 props
+  - **缩略图加载**：使用 `MP4Clip.thumbnails()` 从视频文件提取缩略图
+  - **时间轴倍速联动**：
+    - `originalDuration`：存储视频原始时长
+    - `duration`：计算属性，`= originalDuration / speed`
+    - `displayCurrentTime`：时间轴显示时间，`= videoCurrentTime / speed`
+  - **播放头拖拽**：正确处理倍速模式下的时间映射
+    - 时间轴时间 → 视频实际时间：`videoTime = displayTime * speed`
+  - 播放控制、时间刻度尺、缩放控制
 
 ### 数据流与状态持久化
 
@@ -425,8 +452,9 @@ pnpm run preview
   - 通过 `Combinator` 编码输出视频
 
 - **对比度实现**
+  - 优先使用 **WebGL 硬件加速**（`WebGLContrastRenderer` 类）
+  - WebGL 不可用时回退到 CPU 处理（使用 LUT 查找表优化）
   - 在 `tickInterceptor` 中对每一帧应用对比度滤镜
-  - 使用 Canvas `getImageData` 和像素级处理
   - 分块处理像素，避免长时间阻塞 UI
 
 - **性能优化**
@@ -434,6 +462,31 @@ pnpm run preview
   - 使用 `OffscreenCanvas` 进行离屏渲染
   - 支持硬件加速（取决于浏览器和硬件）
   - 自动清理资源，避免内存泄漏
+
+### 实时预览机制
+
+视频编辑器采用「**预览与导出分离**」的架构，实现无延迟的实时预览体验：
+
+- **倍速预览**
+  - 利用 HTML5 Video 原生的 `playbackRate` 属性
+  - 通过 Vue `watch` 监听 `speed` 变化，实时更新 `video.playbackRate`
+  - 无需视频处理，即时生效
+
+- **对比度预览**
+  - 利用 CSS `filter: contrast()` 属性
+  - 绑定到视频元素的 `style`：`:style="{ filter: \`contrast(\${contrast})\` }"`
+  - GPU 加速渲染，无延迟
+
+- **时间轴联动**
+  - 时间轴接收 `speed` prop，根据倍速计算显示时长
+  - `duration = originalDuration / speed`
+  - 播放头位置基于 `displayCurrentTime = videoCurrentTime / speed`
+  - 拖拽时正确转换：`videoTime = displayTime * speed`
+
+- **导出处理**
+  - 点击「导出视频」时才调用 `VideoEditor.applyFilters()`
+  - 使用 FFmpeg 或 WebAV 进行实际视频编码
+  - 显示处理进度，完成后自动下载
 
 ## 后续可扩展方向
 
