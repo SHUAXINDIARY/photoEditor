@@ -109,32 +109,32 @@ const onVideoLoaded = () => {
 
 // 调整画布显示尺寸
 const updateCanvasDisplaySize = () => {
-	if (!containerRef.value || !canvasRef.value || !videoRef.value) return;
+	// if (!containerRef.value || !canvasRef.value || !videoRef.value) return;
 
-	const container = containerRef.value;
-	const canvas = canvasRef.value;
-	const video = videoRef.value;
+	// const container = containerRef.value;
+	// const canvas = canvasRef.value;
+	// const video = videoRef.value;
 
-	if (!video.videoWidth || !video.videoHeight) return;
+	// if (!video.videoWidth || !video.videoHeight) return;
 
-	const containerWidth = container.clientWidth;
-	const containerHeight = container.clientHeight;
-	const videoAspect = video.videoWidth / video.videoHeight;
-	const containerAspect = containerWidth / containerHeight;
+	// const containerWidth = container.clientWidth;
+	// const containerHeight = container.clientHeight;
+	// const videoAspect = video.videoWidth / video.videoHeight;
+	// const containerAspect = containerWidth / containerHeight;
 
-	let displayWidth: number;
-	let displayHeight: number;
+	// let displayWidth: number;
+	// let displayHeight: number;
 
-	if (videoAspect > containerAspect) {
-		displayWidth = containerWidth;
-		displayHeight = containerWidth / videoAspect;
-	} else {
-		displayHeight = containerHeight;
-		displayWidth = containerHeight * videoAspect;
-	}
+	// if (videoAspect > containerAspect) {
+	// 	displayWidth = containerWidth;
+	// 	displayHeight = containerWidth / videoAspect;
+	// } else {
+	// 	displayHeight = containerHeight;
+	// 	displayWidth = containerHeight * videoAspect;
+	// }
 
-	canvas.style.width = `${displayWidth}px`;
-	canvas.style.height = `${displayHeight}px`;
+	// canvas.style.width = `${displayWidth}px`;
+	// canvas.style.height = `${displayHeight}px`;
 };
 
 // 生命周期
