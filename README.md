@@ -151,10 +151,12 @@ src/
     Video/
       Video.ts               # 视频编辑器核心类（抽象层，支持 FFmpeg 和 WebAV）
       types.ts               # 视频滤镜类型定义和默认值
+      shaders.ts             # 统一的 WebGL 着色器代码（预览和导出共用）
       ffmpeg/
         index.ts             # FFmpeg 实现（FFmpegWrapper）
       webav/
         index.ts             # WebAV 实现（WebAVWrapper）
+        WebGLFilterRenderer.ts  # WebGL 滤镜渲染器（导出用）
   components/
     TimeLine/
       TimeLine.vue           # 视频时间轴组件（支持缩略图、倍速联动）
@@ -272,11 +274,22 @@ src/
   - **WebGL 滤镜处理**：使用与预览相同的 WebGL 着色器，确保导出效果一致
   - 支持进度回调和错误处理
 
-- **`WebGLFilterRenderer` 类**（`components/VideoPreview/WebGLRenderer.ts`）
-  - 封装 WebGL 上下文和着色器程序
-  - 实现统一的滤镜算法（对比度、饱和度、色温、阴影、高光）
-  - 支持 `VideoFrame` 和 `ImageData` 输入
-  - 提供 CPU 回退方案，确保兼容性
+- **`WebGLVideoRenderer` 类**（`components/VideoPreview/WebGLRenderer.ts`）
+  - 用于实时视频预览的 WebGL 渲染器
+  - 从 `shaders.ts` 导入统一的着色器代码
+  - 支持 `HTMLVideoElement` 输入，实时渲染到 Canvas
+
+- **`WebGLFilterRenderer` 类**（`package/Video/webav/WebGLFilterRenderer.ts`）
+  - 用于视频导出的 WebGL 渲染器
+  - 从 `shaders.ts` 导入统一的着色器代码
+  - 支持 `VideoFrame` 输入，返回处理后的像素数据
+  - 与预览使用相同的着色器，确保效果一致
+
+- **统一着色器**（`package/Video/shaders.ts`）
+  - 定义 `FilterParams` 接口和 `DEFAULT_FILTER_PARAMS` 常量
+  - 包含 `VERTEX_SHADER` 和 `FRAGMENT_SHADER` 代码
+  - 预览组件和导出模块共享同一份着色器代码
+  - 修改一处即可同步更新预览和导出效果
 
 - **`TimeLine` 组件**（`components/TimeLine/TimeLine.vue`）
   - 接收 `videoUrl`、`videoElement`、`videoFile`、`speed` 等 props
@@ -530,32 +543,43 @@ pnpm run preview
   - 支持硬件加速（取决于浏览器和硬件）
   - 自动清理资源，避免内存泄漏
 
-### `WebGLFilterRenderer` 类关键逻辑
+### 统一着色器架构（`shaders.ts`）
 
-- **WebGL 着色器**
-  - 顶点着色器：简单的纹理坐标传递
-  - 片段着色器：实现所有滤镜效果的统一算法
-  - 使用 uniform 变量传递滤镜参数
+为确保预览效果与导出效果完全一致，着色器代码被抽离到独立文件 `src/package/Video/shaders.ts`：
+
+- **共享内容**
+  - `FilterParams` 接口：定义滤镜参数类型
+  - `DEFAULT_FILTER_PARAMS`：默认滤镜参数值
+  - `VERTEX_SHADER`：顶点着色器代码
+  - `FRAGMENT_SHADER`：片段着色器代码
+
+- **使用方式**
+  - `VideoPreview/WebGLRenderer.ts`：预览组件导入并使用
+  - `webav/WebGLFilterRenderer.ts`：导出模块导入并使用
 
 - **滤镜算法（GLSL 实现）**
 
 ```glsl
-// 1. 阴影（gamma 曲线）
-float gamma = 1.0 / pow(u_shadows, 0.6);
-rgb = pow(rgb, vec3(gamma));
-
-// 2. 高光（亮度调整）
-float brightness = (u_highlights - 1.0) * 0.3;
-rgb = rgb + brightness;
-
-// 3. 对比度
+// 1. 对比度调整
 rgb = (rgb - 0.5) * u_contrast + 0.5;
 
-// 4. 饱和度
+// 2. 饱和度调整
 float gray = dot(rgb, vec3(0.299, 0.587, 0.114));
 rgb = mix(vec3(gray), rgb, u_saturation);
 
-// 5. 色温
+// 3. 阴影调整（gamma 曲线）
+if (u_shadows != 1.0) {
+  float gamma = 1.0 / pow(u_shadows, 0.6);
+  rgb = pow(rgb, vec3(gamma));
+}
+
+// 4. 高光调整（亮度）
+if (u_highlights != 1.0) {
+  float brightness = (u_highlights - 1.0) * 0.3;
+  rgb = rgb + brightness;
+}
+
+// 5. 色温调整
 if (u_temperature > 0.0) {
   rgb.r += u_temperature * 0.15;
   rgb.g += u_temperature * 0.05;
@@ -632,7 +656,12 @@ if (u_temperature > 0.0) {
 
 ## 更新日志
 
-### v1.1.0 (最新)
+### v1.2.0 (最新)
+- **统一着色器架构**：将 WebGL 着色器代码抽离到 `shaders.ts`，预览和导出共享同一份代码
+- **代码重构**：`WebGLFilterRenderer` 拆分为独立文件，提升代码可维护性
+- **修复 TimeLine 组件**：解决切换模式后重新上传视频时的初始化顺序问题
+
+### v1.1.0
 - **新增视频效果**：饱和度、色温、阴影、高光调节
 - **WebGL 实时预览**：使用 WebGL 着色器替代 CSS 滤镜，确保预览与导出效果一致
 - **配置驱动效果面板**：`EffectsPanel` 组件支持通过配置快速添加新效果
