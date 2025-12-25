@@ -324,7 +324,8 @@ export class FFmpegWrapper {
 
   /**
    * 构建 FFmpeg eq 滤镜参数
-   * eq 滤镜支持: contrast, brightness, saturation, gamma 等
+   * eq 滤镜支持: contrast, brightness, saturation, gamma, gamma_r, gamma_g, gamma_b 等
+   * 将所有颜色调整整合到一个 eq 滤镜中
    * @param options 滤镜选项
    * @returns eq 滤镜字符串，如果没有需要应用的效果则返回 null
    */
@@ -335,13 +336,14 @@ export class FFmpegWrapper {
     const saturation = options.saturation ?? DEFAULT_FILTER_VALUES.saturation;
     const shadows = options.shadows ?? DEFAULT_FILTER_VALUES.shadows;
     const highlights = options.highlights ?? DEFAULT_FILTER_VALUES.highlights;
+    const temperature = options.temperature ?? DEFAULT_FILTER_VALUES.temperature;
     
     if (contrast !== 1.0) {
-      eqParams.push(`contrast=${contrast}`);
+      eqParams.push(`contrast=${contrast.toFixed(3)}`);
     }
     
     if (saturation !== 1.0) {
-      eqParams.push(`saturation=${saturation}`);
+      eqParams.push(`saturation=${saturation.toFixed(3)}`);
     }
     
     // 阴影/高光参数
@@ -350,46 +352,47 @@ export class FFmpegWrapper {
       eqParams.push(...shadowHighlightParams);
     }
     
+    // 色温参数（通过 gamma_r 和 gamma_b 实现）
+    const temperatureParams = this.buildTemperatureParams(temperature);
+    if (temperatureParams) {
+      eqParams.push(...temperatureParams);
+    }
+    
     return eqParams.length > 0 ? `eq=${eqParams.join(":")}` : null;
   }
 
   /**
    * 构建色温滤镜
-   * 使用 colorbalance 滤镜调整色温
-   * 参数与 WebGL 着色器保持一致
-   * colorbalance 参数范围: -1 到 1
+   * 使用 eq 滤镜的 saturation 配合 hue 滤镜实现色温效果
+   * 由于 FFmpeg.wasm 可能不支持 colorbalance/colorchannelmixer，使用更基础的方法
    * @param temperature 色温值 (-1 到 1)
-   * @returns colorbalance 滤镜字符串，如果不需要则返回 null
+   * @returns 色温相关的 eq 参数数组，如果不需要则返回 null
    */
-  private buildTemperatureFilter(temperature: number): string | null {
+  private buildTemperatureParams(temperature: number): string[] | null {
     if (temperature === 0) return null;
     
-    // 色温调整：与 WebGL 着色器一致
-    // WebGL: rgb.r += temperature * 0.15, rgb.g += temperature * 0.05, rgb.b -= temperature * 0.15
-    // colorbalance 参数范围是 -1 到 1，需要确保值在有效范围内
-    const warmth = temperature;
+    // 使用 eq 滤镜的 eval=frame 模式，通过调整 brightness 和 gamma_r/gamma_b 来模拟色温
+    // 暖色调: 增加红色gamma，减少蓝色gamma
+    // 冷色调: 减少红色gamma，增加蓝色gamma
+    const params: string[] = [];
     
-    // 辅助函数：限制值在 -1 到 1 范围内并格式化
-    const clamp = (val: number): string => {
-      const clamped = Math.max(-1, Math.min(1, val));
-      return clamped.toFixed(4);
-    };
-    
-    if (warmth > 0) {
-      // 暖色调：增加红/黄，减少蓝
-      const rs = clamp(warmth * 0.15);
-      const gs = clamp(warmth * 0.05);
-      const bs = clamp(-warmth * 0.15);
-      return `colorbalance=rs=${rs}:gs=${gs}:bs=${bs}:rm=${rs}:gm=${gs}:bm=${bs}:rh=${rs}:gh=${gs}:bh=${bs}`;
+    if (temperature > 0) {
+      // 暖色调
+      // gamma_r > 1 增强红色, gamma_b < 1 减弱蓝色
+      const gammaR = 1 + temperature * 0.2;
+      const gammaB = 1 - temperature * 0.2;
+      params.push(`gamma_r=${gammaR.toFixed(3)}`);
+      params.push(`gamma_b=${gammaB.toFixed(3)}`);
     } else {
-      // 冷色调：减少红，增加蓝
-      // WebGL: rgb.r -= cool * 0.1, rgb.g -= cool * 0.02, rgb.b += cool * 0.15
-      const coolness = Math.abs(warmth);
-      const rs = clamp(-coolness * 0.1);
-      const gs = clamp(-coolness * 0.02);
-      const bs = clamp(coolness * 0.15);
-      return `colorbalance=rs=${rs}:gs=${gs}:bs=${bs}:rm=${rs}:gm=${gs}:bm=${bs}:rh=${rs}:gh=${gs}:bh=${bs}`;
+      // 冷色调
+      const coolness = Math.abs(temperature);
+      const gammaR = 1 - coolness * 0.15;
+      const gammaB = 1 + coolness * 0.2;
+      params.push(`gamma_r=${gammaR.toFixed(3)}`);
+      params.push(`gamma_b=${gammaB.toFixed(3)}`);
     }
+    
+    return params;
   }
 
   /**
@@ -482,42 +485,48 @@ export class FFmpegWrapper {
       console.log("[FFmpeg] 文件写入成功");
 
       // 构建滤镜链
-      // 顺序：eq滤镜(对比度、饱和度、阴影、高光) -> 色温 -> 倍速
+      // 所有颜色调整都整合到一个 eq 滤镜中（对比度、饱和度、阴影、高光、色温）
       const filters: string[] = [];
 
-      // 1. eq 滤镜（对比度、饱和度、阴影、高光）
-      const eqFilter = this.buildEqFilter({ contrast, saturation, shadows, highlights });
+      // 1. eq 滤镜（包含所有颜色调整）
+      const eqFilter = this.buildEqFilter({ contrast, saturation, shadows, highlights, temperature });
       if (eqFilter) {
         filters.push(eqFilter);
       }
 
-      // 2. 色温滤镜
-      const temperatureFilter = this.buildTemperatureFilter(temperature);
-      if (temperatureFilter) {
-        filters.push(temperatureFilter);
-      }
-
-      // 3. 倍速滤镜（最后应用）
+      // 2. 倍速滤镜（最后应用）
       if (speed !== 1.0) {
         filters.push(`setpts=${1 / speed}*PTS`);
       }
 
       // 构建 FFmpeg 命令
-      const ffmpegArgs: string[] = ["-i", inputFileName];
+      // -y 覆盖输出文件，避免交互式提示
+      const ffmpegArgs: string[] = ["-y", "-i", inputFileName];
 
       // 如果有滤镜，应用它们
       if (filters.length > 0) {
-        const filterComplex = filters.join(",");
+        // 添加 format=yuv420p 确保输出格式兼容
+        const filterComplex = filters.join(",") + ",format=yuv420p";
         ffmpegArgs.push("-vf", filterComplex);
+      } else {
+        // 即使没有其他滤镜，也确保输出格式
+        ffmpegArgs.push("-vf", "format=yuv420p");
       }
 
       // 移除音频轨道并设置编码参数
       ffmpegArgs.push("-an", "-c:v", "libx264", "-preset", "ultrafast", outputFileName);
 
       console.log("[FFmpeg] 开始执行 FFmpeg 命令");
+      console.log("[FFmpeg] 完整命令:", ["ffmpeg", ...ffmpegArgs].join(" "));
       console.log("[FFmpeg] 效果参数:", { speed, contrast, saturation, temperature, shadows, highlights });
       console.log("[FFmpeg] 滤镜链:", filters.join(","));
-      await this.ffmpeg.exec(ffmpegArgs);
+      
+      try {
+        await this.ffmpeg.exec(ffmpegArgs);
+      } catch (execError) {
+        console.error("[FFmpeg] exec 执行失败:", execError);
+        throw execError;
+      }
 
       // 读取输出文件
       console.log("[FFmpeg] 读取输出文件:", outputFileName);
