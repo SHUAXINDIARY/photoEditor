@@ -438,7 +438,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .timeline-container {
   width: 100%;
-  height: 15vh;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
