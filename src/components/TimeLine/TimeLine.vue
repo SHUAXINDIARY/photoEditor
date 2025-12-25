@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { MP4Clip } from "@webav/av-cliper";
+// SVG 图标路径
+const PlayIcon = new URL("../../assets/play.svg", import.meta.url).href;
+const PauseIcon = new URL("../../assets/pause.svg", import.meta.url).href;
 
 // 组件参数
 interface Props {
   videoUrl: string;
   videoElement: HTMLVideoElement | null;
+  videoFile?: File | null; // 新增：视频文件对象
 }
 
 const props = defineProps<Props>();
+
+// 缩略图类型
+interface Thumbnail {
+  ts: number; // 时间戳（微秒）
+  img: string; // Blob URL
+}
 
 // 状态
 const isPlaying = ref(false);
@@ -15,6 +26,11 @@ const currentTime = ref(0);
 const duration = ref(0);
 const isDragging = ref(false);
 const scale = ref(10); // 缩放级别（像素/秒）
+
+// 缩略图状态
+const thumbnails = ref<Thumbnail[]>([]);
+const isLoadingThumbnails = ref(false);
+const lastLoadedFileId = ref<string | null>(null); // 用于判断文件是否变化
 
 // 时间轴进度（百分比）
 const progress = computed(() => {
@@ -87,6 +103,76 @@ watch(
   },
   { immediate: true }
 );
+
+// 监听视频文件变化，加载缩略图
+watch(
+  () => props.videoFile,
+  async (newFile) => {
+    if (newFile) {
+      // 生成文件唯一标识（文件名 + 大小 + 最后修改时间）
+      const fileId = `${newFile.name}-${newFile.size}-${newFile.lastModified}`;
+      if (fileId !== lastLoadedFileId.value) {
+        lastLoadedFileId.value = fileId;
+        await loadThumbnailsFromFile(newFile);
+      }
+    } else {
+      // 文件被清除，清理缩略图
+      cleanupThumbnails();
+      lastLoadedFileId.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+// 从 File 对象加载缩略图
+const loadThumbnailsFromFile = async (file: File) => {
+  if (!file || isLoadingThumbnails.value) return;
+
+  // 清理旧的缩略图 URL
+  cleanupThumbnails();
+
+  isLoadingThumbnails.value = true;
+
+  try {
+    console.log("[TimeLine] 开始从文件加载缩略图:", file.name);
+
+    // 直接使用 File 的 stream() 方法获取 ReadableStream
+    const videoStream = file.stream();
+
+    // 创建 MP4Clip 并获取缩略图
+    const clip = new MP4Clip(videoStream);
+    await clip.ready;
+
+    console.log("[TimeLine] MP4Clip ready, 开始获取缩略图...");
+
+    const imgList = await clip.thumbnails();
+    console.log("[TimeLine] 获取到缩略图数量:", imgList.length);
+
+    // 转换为 Blob URL
+    thumbnails.value = imgList.map((item) => ({
+      ts: item.ts,
+      img: URL.createObjectURL(item.img),
+    }));
+
+    // 销毁 clip
+    clip.destroy();
+
+    console.log("[TimeLine] 缩略图加载完成");
+  } catch (error) {
+    console.error("[TimeLine] 加载缩略图失败:", error);
+    thumbnails.value = [];
+  } finally {
+    isLoadingThumbnails.value = false;
+  }
+};
+
+// 清理缩略图 URL
+const cleanupThumbnails = () => {
+  thumbnails.value.forEach((thumb) => {
+    URL.revokeObjectURL(thumb.img);
+  });
+  thumbnails.value = [];
+};
 
 // 设置视频监听器
 const setupVideoListeners = (video: HTMLVideoElement) => {
@@ -207,6 +293,9 @@ onBeforeUnmount(() => {
   if (props.videoElement) {
     removeVideoListeners(props.videoElement);
   }
+
+  // 清理缩略图 URL
+  cleanupThumbnails();
 });
 </script>
 
@@ -232,13 +321,8 @@ onBeforeUnmount(() => {
       <div class="toolbar-center">
         <!-- 播放按钮 -->
         <button class="play-btn" @click="togglePlay" :disabled="!videoElement">
-          <svg v-if="isPlaying" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="4" width="4" height="16" rx="1" />
-            <rect x="14" y="4" width="4" height="16" rx="1" />
-          </svg>
-          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <img v-if="isPlaying" :src="PauseIcon" alt="暂停" class="play-icon" />
+          <img v-else :src="PlayIcon" alt="播放" class="play-icon" />
         </button>
         <!-- 时间显示 -->
         <div class="time-display">
@@ -249,22 +333,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="toolbar-right">
-        <!-- 吸附按钮 -->
-        <button class="tool-btn active" title="吸附">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-        </button>
-        <!-- 裁剪按钮 -->
-        <button class="tool-btn" title="裁剪">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M6.13 1L6 16a2 2 0 002 2h15" />
-            <path d="M1 6.13L16 6a2 2 0 012 2v15" />
-          </svg>
-        </button>
         <!-- 缩放控制 -->
         <div class="zoom-controls">
           <button class="zoom-btn" @click="zoomOut" title="缩小">
@@ -337,13 +405,30 @@ onBeforeUnmount(() => {
                 width: `${timeToPixel(duration)}px`,
               }"
             >
-              <!-- 视频缩略图条纹 -->
+              <!-- 视频缩略图 -->
               <div class="clip-thumbnails">
-                <div 
-                  v-for="i in Math.ceil(duration / 5)" 
-                  :key="i" 
-                  class="thumbnail-placeholder"
-                ></div>
+                <!-- 加载中状态 -->
+                <div v-if="isLoadingThumbnails" class="thumbnails-loading">
+                  <span class="loading-spinner"></span>
+                </div>
+                <!-- 真实缩略图 -->
+                <template v-else-if="thumbnails.length > 0">
+                  <img
+                    v-for="thumb in thumbnails"
+                    :key="thumb.ts"
+                    :src="thumb.img"
+                    class="thumbnail-img"
+                    :alt="`${(thumb.ts / 1e6).toFixed(1)}s`"
+                  />
+                </template>
+                <!-- 占位符（无缩略图时） -->
+                <template v-else>
+                  <div 
+                    v-for="i in Math.max(1, Math.ceil(duration / 5))" 
+                    :key="i" 
+                    class="thumbnail-placeholder"
+                  ></div>
+                </template>
               </div>
             </div>
           </div>
@@ -359,7 +444,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 音频轨道 -->
-          <div class="track audio-track">
+          <!-- <div class="track audio-track">
             <div
               v-if="duration > 0"
               class="clip audio-clip"
@@ -371,7 +456,7 @@ onBeforeUnmount(() => {
               <div class="audio-icon">🎵</div>
               <div class="audio-waveform"></div>
             </div>
-          </div>
+          </div> -->
 
           <!-- 播放头 -->
           <div class="playhead" :style="{ left: `${playheadPosition}px` }">
@@ -391,6 +476,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .timeline-container {
   width: 100%;
+  height: 15vh;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -653,13 +739,52 @@ onBeforeUnmount(() => {
   display: flex;
   height: 100%;
   gap: 2px;
-  padding: 4px;
+  padding: 3px;
+  align-items: center;
+  overflow: hidden;
 }
 
+/* 真实缩略图 */
+.thumbnail-img {
+  height: 100%;
+  width: auto;
+  min-width: 40px;
+  max-width: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* 加载中状态 */
+.thumbnails-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(139, 92, 246, 0.3);
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 占位符（无缩略图时） */
 .thumbnail-placeholder {
   flex: 1;
   min-width: 40px;
   max-width: 60px;
+  height: calc(100% - 2px);
   background: linear-gradient(180deg, #a5b4fc 0%, #818cf8 50%, #6366f1 100%);
   border-radius: 4px;
   position: relative;

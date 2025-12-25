@@ -559,7 +559,7 @@ const downloadVideo = () => {
 					</div>
 
 					<!-- 时间轴组件 -->
-					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" />
+					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" :videoFile="originalVideoFile" />
 				</div>
 			</div>
 
