@@ -5,7 +5,7 @@
 这是一个基于 **Vue 3 + TypeScript + Rspack/Vite** 实现的前端媒体编辑器，包含**图片编辑器**和**视频编辑器**两个核心模块。
 
 - **图片编辑器**：使用 **Konva** 实现，支持加载本地图片，进行对比度 / 色温 / 饱和度 / 模糊 / 效果增强等基础调节，并提供画笔遮罩绘制与导出功能。
-- **视频编辑器**：支持 **FFmpeg.wasm** 和 **WebAV（WebCodecs）** 两种处理模式，支持视频倍速调整、对比度调节，效果可叠加使用，并提供实时进度显示和视频预览功能。
+- **视频编辑器**：支持 **FFmpeg.wasm** 和 **WebAV（WebCodecs）** 两种处理模式，支持视频倍速调整、对比度、饱和度、色温、阴影、高光等多种效果调节，效果可叠加使用，并提供 **WebGL 实时预览**和视频导出功能。
 
 ## 功能概览
 
@@ -55,33 +55,46 @@
   - 实时视频预览，支持播放控制
   - 时间轴组件，显示视频播放进度和缩略图
 
-- **实时效果预览**
-  - **倍速实时预览**：拖动滑块时通过 `video.playbackRate` 即时预览倍速效果，无需等待处理
-  - **对比度实时预览**：拖动滑块时通过 CSS `filter: contrast()` 即时预览对比度效果
+- **WebGL 实时效果预览**
+  - **统一 WebGL 渲染**：使用 WebGL 着色器实时预览所有滤镜效果，确保预览与导出效果一致
+  - **倍速实时预览**：拖动滑块时通过 `video.playbackRate` 即时预览倍速效果
+  - **多滤镜实时预览**：对比度、饱和度、色温、阴影、高光等效果实时预览
   - **时间轴联动**：调整倍速时，时间轴长度自动同步变化（2x 倍速时时间轴缩短一半）
   - **无延迟体验**：预览效果即时生效，导出时才进行实际视频处理
 
 - **视频处理功能**
   - **倍速调整**：范围 \[0.25x, 4x]，步长 0.25x
   - **对比度调整**：范围 \[0.5, 2.0]，步长 0.05
-  - **效果叠加**：倍速和对比度可以同时应用，互不覆盖
+  - **饱和度调整**：范围 \[0, 3.0]，步长 0.05
+  - **色温调整**：范围 \[-1.0, 1.0]，冷色调到暖色调
+  - **阴影调整**：范围 \[0, 2.0]，控制暗部细节
+  - **高光调整**：范围 \[0, 2.0]，控制亮部细节
+  - **效果叠加**：所有效果可以同时应用，互不覆盖
   - **一键重置**：快速恢复所有效果到默认值
 
 - **处理模式选择**
   - **FFmpeg 模式**：基于 WebAssembly 的 FFmpeg，功能完整，兼容性好
     - 首次加载显示进度条，支持加载失败重试
     - 使用 `@ffmpeg/ffmpeg` 和 `@ffmpeg/core-mt` 多线程版本，提升处理性能
+    - 使用 `eq` 滤镜实现对比度、饱和度、阴影、高光、色温调整
+    - **假进度效果**：FFmpeg 处理时显示平滑的进度动画，提升用户体验
   - **WebAV 模式**：基于 WebCodecs API，性能更优，无需预加载
     - 使用 `@webav/av-cliper` 库，基于浏览器原生 WebCodecs API
     - 支持硬件加速，处理速度更快
+    - 使用 WebGL 着色器实现滤镜处理，与预览效果完全一致
     - 需要浏览器支持 WebCodecs API（Chrome 94+、Edge 94+）
 
 - **导出功能**
   - 点击「导出视频」时才进行实际视频处理
-  - 实时处理进度显示（0-100%）
-  - 自动应用当前设置的倍速和对比度值
+  - 实时处理进度显示（0-100%），FFmpeg 模式支持假进度动画
+  - 自动应用当前设置的所有滤镜效果
   - 处理完成后自动下载视频文件
   - 支持清除视频，重置所有设置
+
+- **视频信息面板**
+  - 显示视频文件名、尺寸、时长等基本信息
+  - 实时显示当前调整的效果参数（倍速、对比度、饱和度、色温、阴影、高光）
+  - 只显示非默认值的参数，界面简洁清晰
 
 - **时间轴组件**
   - 视频缩略图预览（使用 `@webav/av-cliper` 的 `thumbnails` API）
@@ -90,9 +103,11 @@
   - 播放/暂停控制，当前时间和总时长显示
 
 - **UX & 交互**
-  - 左侧效果调整面板：倍速控制、对比度控制、当前效果提示
-  - 右侧视频区域：视频预览 + 时间轴
+  - 左侧效果调整面板：倍速、对比度、饱和度、色温、阴影、高光控制
+  - 右侧视频区域：WebGL 视频预览 + 视频信息 + 时间轴
+  - 配置驱动的效果面板，易于扩展新效果
   - 处理中状态禁用相关操作，避免冲突
+  - 响应式布局，适配不同屏幕尺寸
   - 现代化渐变背景，清晰的视觉层次
 
 ## 技术栈与关键依赖
@@ -135,6 +150,7 @@ src/
   package/
     Video/
       Video.ts               # 视频编辑器核心类（抽象层，支持 FFmpeg 和 WebAV）
+      types.ts               # 视频滤镜类型定义和默认值
       ffmpeg/
         index.ts             # FFmpeg 实现（FFmpegWrapper）
       webav/
@@ -142,6 +158,14 @@ src/
   components/
     TimeLine/
       TimeLine.vue           # 视频时间轴组件（支持缩略图、倍速联动）
+    EffectsPanel/
+      index.vue              # 效果调节面板组件（配置驱动）
+    VideoPreview/
+      index.vue              # WebGL 视频预览组件
+      WebGLRenderer.ts       # WebGL 滤镜渲染器
+  assets/
+    zoom-in.svg              # 放大图标
+    zoom-out.svg             # 缩小图标
   utils/
     ImageEditor.ts           # Konva 封装的图片编辑器核心类（基础画布能力）
     ImageFilterManager.ts    # 图片滤镜管理模块（与画布能力解耦）
@@ -160,7 +184,9 @@ src/
 - **`VideoEditor/index.vue`**：视频编辑器页面，负责 UI、状态管理和与 VideoEditor 交互
 - **`ImageEditor` 类**：负责基础画布能力（Stage/Layer 管理、图片加载、画笔绘制、导出等）
 - **`ImageFilterManager` 类**：独立管理所有滤镜效果（对比度、色温、饱和度、模糊、增强），与画布能力解耦
-- **`VideoEditor` 类**：视频编辑器抽象层，支持 FFmpeg 和 WebAV 两种底层实现，提供统一的视频处理接口（倍速、对比度等）
+- **`VideoEditor` 类**：视频编辑器抽象层，支持 FFmpeg 和 WebAV 两种底层实现，提供统一的视频处理接口（倍速、对比度、饱和度、色温、阴影、高光等）
+- **`EffectsPanel` 组件**：配置驱动的效果调节面板，支持动态添加新效果
+- **`VideoPreview` 组件**：基于 WebGL 的视频预览组件，确保预览与导出效果一致
 
 ### 组件与类的职责划分
 
@@ -196,32 +222,46 @@ src/
 #### 视频编辑器模块
 
 - **`VideoEditor/index.vue`**
-  - 持有响应式状态：`speed`、`contrast`、`processingMode` 等
+  - 持有响应式状态：`speed`、`contrast`、`saturation`、`temperature`、`shadows`、`highlights`、`processingMode` 等
   - 管理处理模式选择（FFmpeg 或 WebAV）
   - 管理底层处理引擎的加载状态和进度显示
   - 负责视频文件上传和预览
-  - **实时预览机制**：
-    - 倍速：通过 `watch` 监听 `speed` 变化，实时修改 `video.playbackRate`
-    - 对比度：通过 CSS `filter: contrast()` 绑定到视频元素
+  - **WebGL 实时预览机制**：
+    - 使用 `VideoPreview` 组件进行 WebGL 渲染
+    - 所有滤镜效果通过 WebGL 着色器实时应用
+    - 倍速：通过 `video.playbackRate` 实时修改
   - 导出时调用 `VideoEditor.applyFilters` 进行实际视频处理
   - 处理进度显示和错误处理
   - 提供视频导出和重置功能
+  - 视频信息面板实时显示当前效果参数
 
 - **`VideoEditor` 类**（抽象层）
   - 支持动态切换处理模式（FFmpeg 或 WebAV）
   - 封装底层处理引擎（`FFmpegWrapper` 或 `WebAVWrapper`），提供统一接口
   - 管理加载状态和进度
   - 提供视频处理能力：
-    - `changeSpeedWithProgress(inputFile, speed, onProgress)`：调整视频倍速
-    - `changeContrastWithProgress(inputFile, contrast, onProgress)`：调整视频对比度
-    - `applyFilters(inputFile, options, onProgress)`：同时应用多个效果（倍速 + 对比度）
+    - `applyFilters(inputFile, options, onProgress)`：同时应用多个效果（倍速、对比度、饱和度、色温、阴影、高光）
   - 支持进度回调，实时更新处理进度
   - 自动管理资源，处理完成后清理
+
+- **`EffectsPanel` 组件**（`components/EffectsPanel/index.vue`）
+  - **配置驱动架构**：通过 `EffectConfig` 数组定义所有效果
+  - 每个效果配置包含：`key`、`icon`、`label`、`min`、`max`、`step`、`defaultValue`、`formatValue`
+  - 动态渲染滑块控件，支持快速添加新效果
+  - 提供重置和导出按钮
+
+- **`VideoPreview` 组件**（`components/VideoPreview/index.vue`）
+  - 使用 `WebGLFilterRenderer` 进行实时滤镜渲染
+  - 隐藏原生 `<video>` 元素，在 `<canvas>` 上显示处理后的画面
+  - 监听视频播放状态，使用 `requestAnimationFrame` 持续渲染
+  - 滤镜参数变化时自动更新渲染
 
 - **`FFmpegWrapper` 类**（`package/Video/ffmpeg/index.ts`）
   - 封装 FFmpeg.wasm 实例，管理加载状态
   - 实现 `VideoWrapper` 接口，提供 FFmpeg 底层处理能力
-  - 使用 FFmpeg 滤镜链实现倍速和对比度调整
+  - 使用 FFmpeg `eq` 滤镜实现对比度、饱和度、阴影、高光、色温调整
+  - 色温通过 `gamma_r` 和 `gamma_b` 参数实现
+  - **假进度效果**：FFmpeg 处理时模拟平滑进度动画
   - 支持进度回调和错误处理
 
 - **`WebAVWrapper` 类**（`package/Video/webav/index.ts`）
@@ -229,7 +269,14 @@ src/
   - 实现 `VideoWrapper` 接口，提供 WebAV 底层处理能力
   - 使用 `MP4Clip`、`Combinator`、`OffscreenSprite` 实现视频处理
   - 通过手动 seek 和帧替换实现真正的倍速效果
+  - **WebGL 滤镜处理**：使用与预览相同的 WebGL 着色器，确保导出效果一致
   - 支持进度回调和错误处理
+
+- **`WebGLFilterRenderer` 类**（`components/VideoPreview/WebGLRenderer.ts`）
+  - 封装 WebGL 上下文和着色器程序
+  - 实现统一的滤镜算法（对比度、饱和度、色温、阴影、高光）
+  - 支持 `VideoFrame` 和 `ImageData` 输入
+  - 提供 CPU 回退方案，确保兼容性
 
 - **`TimeLine` 组件**（`components/TimeLine/TimeLine.vue`）
   - 接收 `videoUrl`、`videoElement`、`videoFile`、`speed` 等 props
@@ -434,8 +481,23 @@ pnpm run preview
 
 - **效果叠加实现**
   - `applyFilters` 方法支持同时应用多个效果
-  - 使用 FFmpeg 滤镜链：`eq=contrast=值,setpts=倍速*PTS`
-  - 先应用图像处理（对比度），再应用时间处理（倍速）
+  - 使用 FFmpeg `eq` 滤镜整合所有颜色调整：
+    - `contrast`：对比度
+    - `saturation`：饱和度
+    - `gamma`：阴影（通过 gamma 曲线调整暗部）
+    - `brightness`：高光（通过亮度调整亮部）
+    - `gamma_r` / `gamma_b`：色温（通过红蓝通道 gamma 调整）
+  - 倍速使用 `setpts` 滤镜
+  - 滤镜链格式：`eq=contrast=...:saturation=...:gamma=...:brightness=...:gamma_r=...:gamma_b=...,setpts=倍速*PTS,format=yuv420p`
+
+- **假进度效果**
+  - FFmpeg.wasm 的 `progress` 事件可能不频繁触发
+  - 实现平滑的假进度动画：
+    - 0-30%：快速增长（每 200ms +2%）
+    - 30-60%：中速增长（每 200ms +1%）
+    - 60-85%：慢速增长（每 200ms +0.5%）
+    - 85-100%：等待真实完成
+  - 如果收到真实进度，使用真实进度和假进度中较大的值
 
 ### `WebAVWrapper` 类关键逻辑
 
@@ -451,11 +513,16 @@ pnpm run preview
   - 使用 `tickInterceptor` 将原始帧替换为预处理好的帧
   - 通过 `Combinator` 编码输出视频
 
-- **对比度实现**
-  - 优先使用 **WebGL 硬件加速**（`WebGLContrastRenderer` 类）
-  - WebGL 不可用时回退到 CPU 处理（使用 LUT 查找表优化）
-  - 在 `tickInterceptor` 中对每一帧应用对比度滤镜
-  - 分块处理像素，避免长时间阻塞 UI
+- **滤镜实现**
+  - 使用 **WebGL 硬件加速**（`WebGLFilterRenderer` 类）
+  - WebGL 不可用时回退到 CPU 处理
+  - 在 `tickInterceptor` 中对每一帧应用所有滤镜
+  - 滤镜处理顺序（与 WebGL 着色器一致）：
+    1. 阴影（gamma 曲线）
+    2. 高光（亮度调整）
+    3. 对比度
+    4. 饱和度
+    5. 色温（红蓝通道调整）
 
 - **性能优化**
   - 批量处理帧，定期让出控制权（`setTimeout(resolve, 0)`）
@@ -463,19 +530,69 @@ pnpm run preview
   - 支持硬件加速（取决于浏览器和硬件）
   - 自动清理资源，避免内存泄漏
 
+### `WebGLFilterRenderer` 类关键逻辑
+
+- **WebGL 着色器**
+  - 顶点着色器：简单的纹理坐标传递
+  - 片段着色器：实现所有滤镜效果的统一算法
+  - 使用 uniform 变量传递滤镜参数
+
+- **滤镜算法（GLSL 实现）**
+
+```glsl
+// 1. 阴影（gamma 曲线）
+float gamma = 1.0 / pow(u_shadows, 0.6);
+rgb = pow(rgb, vec3(gamma));
+
+// 2. 高光（亮度调整）
+float brightness = (u_highlights - 1.0) * 0.3;
+rgb = rgb + brightness;
+
+// 3. 对比度
+rgb = (rgb - 0.5) * u_contrast + 0.5;
+
+// 4. 饱和度
+float gray = dot(rgb, vec3(0.299, 0.587, 0.114));
+rgb = mix(vec3(gray), rgb, u_saturation);
+
+// 5. 色温
+if (u_temperature > 0.0) {
+  rgb.r += u_temperature * 0.15;
+  rgb.g += u_temperature * 0.05;
+  rgb.b -= u_temperature * 0.15;
+} else {
+  float cool = abs(u_temperature);
+  rgb.r -= cool * 0.1;
+  rgb.g -= cool * 0.02;
+  rgb.b += cool * 0.15;
+}
+```
+
+- **CPU 回退**
+  - 当 WebGL 不可用时，使用相同算法的 JavaScript 实现
+  - 直接操作 `ImageData` 像素数据
+  - 确保与 WebGL 渲染结果一致
+
 ### 实时预览机制
 
 视频编辑器采用「**预览与导出分离**」的架构，实现无延迟的实时预览体验：
+
+- **WebGL 统一预览**
+  - 使用 `VideoPreview` 组件进行 WebGL 渲染
+  - 隐藏原生 `<video>` 元素，在 `<canvas>` 上显示处理后的画面
+  - 所有滤镜效果通过 WebGL 着色器实时应用
+  - 与 WebAV 导出使用相同的着色器代码，确保效果一致
 
 - **倍速预览**
   - 利用 HTML5 Video 原生的 `playbackRate` 属性
   - 通过 Vue `watch` 监听 `speed` 变化，实时更新 `video.playbackRate`
   - 无需视频处理，即时生效
 
-- **对比度预览**
-  - 利用 CSS `filter: contrast()` 属性
-  - 绑定到视频元素的 `style`：`:style="{ filter: \`contrast(\${contrast})\` }"`
-  - GPU 加速渲染，无延迟
+- **滤镜预览**
+  - 对比度、饱和度、色温、阴影、高光等效果
+  - 通过 WebGL 着色器实时渲染
+  - 使用 `requestAnimationFrame` 持续更新画面
+  - 视频暂停时也能实时响应滤镜参数变化
 
 - **时间轴联动**
   - 时间轴接收 `speed` prop，根据倍速计算显示时长
@@ -485,7 +602,8 @@ pnpm run preview
 
 - **导出处理**
   - 点击「导出视频」时才调用 `VideoEditor.applyFilters()`
-  - 使用 FFmpeg 或 WebAV 进行实际视频编码
+  - FFmpeg 模式：使用 `eq` 滤镜，参数经过调优以接近 WebGL 效果
+  - WebAV 模式：使用与预览相同的 WebGL 着色器，效果完全一致
   - 显示处理进度，完成后自动下载
 
 ## 后续可扩展方向
@@ -496,11 +614,12 @@ pnpm run preview
 - **撤销/重做**：基于操作记录或快照的历史管理
 
 ### 视频编辑器
-- **更多视频效果**：亮度、饱和度、色温、模糊等
+- **更多视频效果**：模糊、锐化、色相调整等
 - **视频裁剪**：时间范围选择、画面裁剪
 - **视频合并**：多段视频拼接
 - **音频处理**：音量调节、音频提取、背景音乐添加
 - **视频格式转换**：支持更多输入/输出格式
+- **LUT 滤镜**：支持导入 3D LUT 文件实现电影级调色
 
 ### 通用功能
 - **服务端集成**：
@@ -510,3 +629,19 @@ pnpm run preview
 - **云存储集成**：支持从云存储加载和保存文件
 
 当前版本完全前端运行，无服务端依赖，适合作为浏览器端媒体编辑功能的基础模块或 DEMO。
+
+## 更新日志
+
+### v1.1.0 (最新)
+- **新增视频效果**：饱和度、色温、阴影、高光调节
+- **WebGL 实时预览**：使用 WebGL 着色器替代 CSS 滤镜，确保预览与导出效果一致
+- **配置驱动效果面板**：`EffectsPanel` 组件支持通过配置快速添加新效果
+- **视频信息面板**：实时显示当前调整的效果参数
+- **FFmpeg 假进度效果**：优化处理过程中的进度显示体验
+- **FFmpeg 滤镜优化**：使用 `eq` 滤镜整合所有颜色调整，提升兼容性
+
+### v1.0.0
+- 图片编辑器：对比度、色温、饱和度、模糊、增强调节
+- 视频编辑器：倍速、对比度调节
+- 双处理模式：FFmpeg.wasm 和 WebAV (WebCodecs)
+- 时间轴组件：缩略图、倍速联动、播放头拖拽
