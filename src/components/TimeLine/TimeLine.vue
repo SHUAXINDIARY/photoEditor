@@ -151,6 +151,56 @@ const cleanupThumbnails = () => {
   thumbnails.value = [];
 };
 
+// 事件处理函数（需要在 setupVideoListeners 之前定义）
+const handleTimeUpdate = () => {
+  if (!isDragging.value && props.videoElement) {
+    videoCurrentTime.value = props.videoElement.currentTime;
+  }
+};
+
+const handleLoadedMetadata = () => {
+  if (props.videoElement) {
+    originalDuration.value = props.videoElement.duration;
+  }
+};
+
+const handlePlay = () => {
+  isPlaying.value = true;
+};
+
+const handlePause = () => {
+  isPlaying.value = false;
+};
+
+const handleEnded = () => {
+  isPlaying.value = false;
+  videoCurrentTime.value = 0;
+};
+
+// 设置视频监听器（需要在 watch 之前定义）
+const setupVideoListeners = (video: HTMLVideoElement) => {
+  video.addEventListener("timeupdate", handleTimeUpdate);
+  video.addEventListener("loadedmetadata", handleLoadedMetadata);
+  video.addEventListener("play", handlePlay);
+  video.addEventListener("pause", handlePause);
+  video.addEventListener("ended", handleEnded);
+
+  // 初始化状态
+  if (video.duration) {
+    originalDuration.value = video.duration;
+  }
+  videoCurrentTime.value = video.currentTime;
+};
+
+// 移除视频监听器
+const removeVideoListeners = (video: HTMLVideoElement) => {
+  video.removeEventListener("timeupdate", handleTimeUpdate);
+  video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+  video.removeEventListener("play", handlePlay);
+  video.removeEventListener("pause", handlePause);
+  video.removeEventListener("ended", handleEnded);
+};
+
 // 监听视频元素变化
 watch(
   () => props.videoElement,
@@ -186,56 +236,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-// 设置视频监听器
-const setupVideoListeners = (video: HTMLVideoElement) => {
-  video.addEventListener("timeupdate", handleTimeUpdate);
-  video.addEventListener("loadedmetadata", handleLoadedMetadata);
-  video.addEventListener("play", handlePlay);
-  video.addEventListener("pause", handlePause);
-  video.addEventListener("ended", handleEnded);
-
-  // 初始化状态
-  if (video.duration) {
-    originalDuration.value = video.duration;
-  }
-  videoCurrentTime.value = video.currentTime;
-};
-
-// 移除视频监听器
-const removeVideoListeners = (video: HTMLVideoElement) => {
-  video.removeEventListener("timeupdate", handleTimeUpdate);
-  video.removeEventListener("loadedmetadata", handleLoadedMetadata);
-  video.removeEventListener("play", handlePlay);
-  video.removeEventListener("pause", handlePause);
-  video.removeEventListener("ended", handleEnded);
-};
-
-// 事件处理
-const handleTimeUpdate = () => {
-  if (!isDragging.value && props.videoElement) {
-    videoCurrentTime.value = props.videoElement.currentTime;
-  }
-};
-
-const handleLoadedMetadata = () => {
-  if (props.videoElement) {
-    originalDuration.value = props.videoElement.duration;
-  }
-};
-
-const handlePlay = () => {
-  isPlaying.value = true;
-};
-
-const handlePause = () => {
-  isPlaying.value = false;
-};
-
-const handleEnded = () => {
-  isPlaying.value = false;
-  videoCurrentTime.value = 0;
-};
 
 // 播放/暂停控制
 const togglePlay = () => {
