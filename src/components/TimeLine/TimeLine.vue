@@ -24,7 +24,7 @@ const progress = computed(() => {
 
 // 时间轴总宽度
 const timelineWidth = computed(() => {
-  const minDuration = Math.max(duration.value, 20);
+  const minDuration = Math.max(duration.value, 60);
   return minDuration * scale.value;
 });
 
@@ -33,35 +33,35 @@ const playheadPosition = computed(() => {
   return currentTime.value * scale.value;
 });
 
-// 生成时间刻度
+// 生成时间刻度（每10秒一个主刻度）
 const timeMarkers = computed(() => {
   const markers: { time: number; label: string; isMajor: boolean }[] = [];
-  const maxDuration = Math.max(duration.value, 20);
-  const step = scale.value >= 20 ? 1 : scale.value >= 10 ? 2 : 5;
+  const maxDuration = Math.max(duration.value, 60);
+  const majorStep = 10; // 主刻度间隔10秒
 
-  for (let t = 0; t <= Math.ceil(maxDuration); t += step) {
+  for (let t = 0; t <= Math.ceil(maxDuration); t += majorStep) {
     markers.push({
       time: t,
-      label: formatTime(t),
-      isMajor: t % (step * 5) === 0 || t === 0,
+      label: formatTimeLabel(t),
+      isMajor: true,
     });
   }
   return markers;
 });
 
-// 格式化时间显示
-const formatTime = (seconds: number): string => {
+// 格式化时间标签（mm:ss格式）
+const formatTimeLabel = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
-// 格式化详细时间显示
+// 格式化详细时间显示（hh:mm:ss格式）
 const formatDetailTime = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60);
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 10);
-  return `${mins}:${secs.toString().padStart(2, "0")}.${ms}`;
+  return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
 // 像素转时间
@@ -212,42 +212,99 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="timeline-container">
-    <!-- 工具栏 -->
+    <!-- 顶部工具栏 -->
     <div class="timeline-toolbar">
       <div class="toolbar-left">
-        <!-- 播放控制 -->
-        <button class="play-btn" @click="togglePlay" :disabled="!videoElement">
-          <span v-if="isPlaying">⏸️</span>
-          <span v-else>▶️</span>
+        <!-- 分割按钮 -->
+        <button class="tool-btn" title="分割">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v18M3 12h18" />
+          </svg>
         </button>
+        <!-- 删除按钮 -->
+        <button class="tool-btn" title="删除">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="toolbar-center">
+        <!-- 播放按钮 -->
+        <button class="play-btn" @click="togglePlay" :disabled="!videoElement">
+          <svg v-if="isPlaying" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </button>
+        <!-- 时间显示 -->
         <div class="time-display">
-          {{ formatDetailTime(currentTime) }} / {{ formatDetailTime(duration) }}
+          <span class="current-time">{{ formatDetailTime(currentTime) }}</span>
+          <span class="time-separator">|</span>
+          <span class="total-time">{{ formatDetailTime(duration) }}</span>
         </div>
       </div>
 
       <div class="toolbar-right">
-        <!-- 缩放控制 -->
-        <button class="toolbar-btn zoom-btn" @click="zoomOut" title="缩小">
-          <span>➖</span>
+        <!-- 吸附按钮 -->
+        <button class="tool-btn active" title="吸附">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
         </button>
-        <span class="zoom-label">{{ scale }}x</span>
-        <button class="toolbar-btn zoom-btn" @click="zoomIn" title="放大">
-          <span>➕</span>
+        <!-- 裁剪按钮 -->
+        <button class="tool-btn" title="裁剪">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6.13 1L6 16a2 2 0 002 2h15" />
+            <path d="M1 6.13L16 6a2 2 0 012 2v15" />
+          </svg>
+        </button>
+        <!-- 缩放控制 -->
+        <div class="zoom-controls">
+          <button class="zoom-btn" @click="zoomOut" title="缩小">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35M8 11h6" />
+            </svg>
+          </button>
+          <input 
+            type="range" 
+            class="zoom-slider" 
+            :value="scale" 
+            @input="scale = Number(($event.target as HTMLInputElement).value)"
+            min="2" 
+            max="50" 
+          />
+          <button class="zoom-btn" @click="zoomIn" title="放大">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" />
+            </svg>
+          </button>
+        </div>
+        <!-- 全屏按钮 -->
+        <button class="tool-btn" title="全屏">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3" />
+          </svg>
+        </button>
+        <!-- 更多按钮 -->
+        <button class="tool-btn" title="更多">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+          </svg>
         </button>
       </div>
     </div>
 
     <!-- 时间轴主体 -->
     <div class="timeline-body">
-      <!-- 轨道标签 -->
-      <div class="track-labels">
-        <div class="time-ruler-label"></div>
-        <div class="track-label">
-          <span class="track-icon">🎬</span>
-          视频
-        </div>
-      </div>
-
       <!-- 时间轴内容 -->
       <div
         ref="timelineContentRef"
@@ -261,38 +318,68 @@ onBeforeUnmount(() => {
             v-for="marker in timeMarkers"
             :key="marker.time"
             class="time-marker"
-            :class="{ major: marker.isMajor }"
             :style="{ left: `${timeToPixel(marker.time)}px` }"
           >
-            <span v-if="marker.isMajor" class="marker-label">{{ marker.label }}</span>
+            <span class="marker-label">{{ marker.label }}</span>
+            <div class="marker-line"></div>
           </div>
         </div>
 
         <!-- 轨道区域 -->
-        <div ref="timelineRef" class="tracks-area" :style="{ width: `${timelineWidth}px` }">
+        <div class="tracks-area" :style="{ width: `${timelineWidth}px` }">
           <!-- 视频轨道 -->
-          <div class="track">
-            <!-- 视频片段 -->
+          <div class="track video-track">
             <div
               v-if="duration > 0"
-              class="action video-action"
+              class="clip video-clip"
               :style="{
                 left: '0px',
                 width: `${timeToPixel(duration)}px`,
               }"
             >
-              <div class="action-content">
-                <span class="action-icon">🎬</span>
-                <span class="action-name">视频</span>
+              <!-- 视频缩略图条纹 -->
+              <div class="clip-thumbnails">
+                <div 
+                  v-for="i in Math.ceil(duration / 5)" 
+                  :key="i" 
+                  class="thumbnail-placeholder"
+                ></div>
               </div>
-              <!-- 进度条 -->
-              <div class="action-progress" :style="{ width: `${progress}%` }"></div>
+            </div>
+          </div>
+
+          <!-- 文字轨道1 -->
+          <div class="track text-track">
+            <!-- 示例文字片段 -->
+          </div>
+
+          <!-- 文字轨道2 -->
+          <div class="track text-track">
+            <!-- 示例文字片段 -->
+          </div>
+
+          <!-- 音频轨道 -->
+          <div class="track audio-track">
+            <div
+              v-if="duration > 0"
+              class="clip audio-clip"
+              :style="{
+                left: '0px',
+                width: `${timeToPixel(duration)}px`,
+              }"
+            >
+              <div class="audio-icon">🎵</div>
+              <div class="audio-waveform"></div>
             </div>
           </div>
 
           <!-- 播放头 -->
           <div class="playhead" :style="{ left: `${playheadPosition}px` }">
-            <div class="playhead-head"></div>
+            <div class="playhead-head">
+              <svg width="12" height="16" viewBox="0 0 12 16">
+                <path d="M0 0h12v12l-6 4-6-4V0z" fill="#8B5CF6" />
+              </svg>
+            </div>
             <div class="playhead-line"></div>
           </div>
         </div>
@@ -304,256 +391,356 @@ onBeforeUnmount(() => {
 <style scoped>
 .timeline-container {
   width: 100%;
-  background: #1a1a2e;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 /* ==================== 工具栏 ==================== */
 .timeline-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 16px;
-  background: #16213e;
-  border-bottom: 1px solid #0f3460;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .toolbar-left,
+.toolbar-center,
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.toolbar-btn {
+.toolbar-left {
+  justify-content: flex-start;
+}
+
+.toolbar-center {
+  justify-content: center;
+}
+
+.toolbar-right {
+  justify-content: flex-end;
+}
+
+.tool-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 10px;
-  background: #0f3460;
+  width: 36px;
+  height: 36px;
+  background: transparent;
   border: none;
-  border-radius: 6px;
-  color: #e0e0e0;
+  border-radius: 8px;
+  color: #6b7280;
   cursor: pointer;
-  font-size: 13px;
   transition: all 0.2s;
 }
 
-.toolbar-btn:hover:not(:disabled) {
-  background: #1a4a7a;
+.tool-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
 }
 
-.toolbar-btn:disabled {
+.tool-btn.active {
+  background: #ede9fe;
+  color: #8b5cf6;
+}
+
+.play-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: #f3f4f6;
+  color: #374151;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.play-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.play-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.play-btn {
-  width: 44px;
-  height: 44px;
-  border: none;
-  background: #e94560;
-  color: white;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 18px;
+.time-display {
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.3);
-}
-
-.play-btn:hover:not(:disabled) {
-  background: #ff6b6b;
-  transform: scale(1.05);
-}
-
-.play-btn:disabled {
-  background: #555;
-  opacity: 0.5;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.time-display {
-  color: #e0e0e0;
+  gap: 8px;
   font-size: 14px;
-  font-weight: 500;
   font-family: "SF Mono", "Monaco", "Consolas", monospace;
-  min-width: 140px;
+  color: #374151;
+}
+
+.current-time {
+  font-weight: 500;
+}
+
+.time-separator {
+  color: #d1d5db;
+}
+
+.total-time {
+  color: #9ca3af;
+}
+
+/* 缩放控制 */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
 }
 
 .zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
-  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.zoom-label {
-  color: #888;
-  font-size: 12px;
-  min-width: 32px;
-  text-align: center;
+.zoom-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.zoom-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e5e7eb;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #8b5cf6;
+  border-radius: 50%;
+  cursor: pointer;
 }
 
 /* ==================== 时间轴主体 ==================== */
 .timeline-body {
-  display: flex;
-  height: 120px;
+  position: relative;
+  background: #fafafa;
+  overflow: hidden;
 }
 
-/* 轨道标签 */
-.track-labels {
-  width: 80px;
-  flex-shrink: 0;
-  background: #16213e;
-  border-right: 1px solid #0f3460;
-}
-
-.time-ruler-label {
-  height: 32px;
-  border-bottom: 1px solid #0f3460;
-}
-
-.track-label {
-  height: 80px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  color: #888;
-  font-size: 12px;
-  font-weight: 500;
-  border-bottom: 1px solid #0f3460;
-  border-left: 3px solid #4caf50;
-}
-
-.track-icon {
-  font-size: 14px;
-}
-
-/* 时间轴内容 */
 .timeline-content {
-  flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
   cursor: pointer;
+  /* 防止缩放时抖动 */
+  will-change: scroll-position;
+  scroll-behavior: auto;
 }
 
 /* 时间刻度尺 */
 .time-ruler {
-  height: 32px;
-  background: #1a1a2e;
-  border-bottom: 1px solid #0f3460;
+  height: 28px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
   position: relative;
   min-width: 100%;
+  /* 防止缩放抖动 */
+  contain: layout style;
 }
 
 .time-marker {
   position: absolute;
   top: 0;
   height: 100%;
-  border-left: 1px solid #333;
-}
-
-.time-marker.major {
-  border-left-color: #555;
-}
-
-.time-marker.major::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: -1px;
-  width: 1px;
-  height: 8px;
-  background: #666;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .marker-label {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  color: #888;
-  font-size: 10px;
+  padding: 4px 0 0 4px;
+  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
   user-select: none;
+}
+
+.marker-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  background: #d1d5db;
 }
 
 /* 轨道区域 */
 .tracks-area {
   position: relative;
-  min-height: 80px;
   min-width: 100%;
+  padding-bottom: 8px;
+  /* 防止缩放抖动 */
+  contain: layout style;
 }
 
 .track {
-  height: 80px;
-  border-bottom: 1px solid #0f3460;
+  height: 56px;
   position: relative;
-  background: rgba(255, 255, 255, 0.02);
+  margin: 4px 0;
 }
 
-.track:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-/* 动作（视频片段） */
-.action {
-  position: absolute;
-  top: 8px;
+/* 视频轨道 */
+.video-track {
   height: 64px;
-  border-radius: 6px;
-  cursor: pointer;
+}
+
+/* 文字轨道 */
+.text-track {
+  height: 40px;
+}
+
+/* 音频轨道 */
+.audio-track {
+  height: 48px;
+}
+
+/* 片段基础样式 */
+.clip {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: box-shadow 0.2s, transform 0.1s;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
 }
 
-.action:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+.clip:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.video-action {
-  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+/* 视频片段 */
+.video-clip {
+  background: linear-gradient(180deg, #fce7f3 0%, #fbcfe8 100%);
+  border: 2px solid #f9a8d4;
 }
 
-.action-content {
+.clip-thumbnails {
+  display: flex;
+  height: 100%;
+  gap: 2px;
+  padding: 4px;
+}
+
+.thumbnail-placeholder {
+  flex: 1;
+  min-width: 40px;
+  max-width: 60px;
+  background: linear-gradient(180deg, #a5b4fc 0%, #818cf8 50%, #6366f1 100%);
+  border-radius: 4px;
   position: relative;
-  z-index: 2;
+}
+
+.thumbnail-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cpath d='M20 5L25 15L35 17L28 24L30 35L20 30L10 35L12 24L5 17L15 15Z' fill='%23ffffff' opacity='0.3'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+/* 文字片段 */
+.text-clip {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 100%;
   padding: 0 12px;
   color: white;
   font-size: 13px;
   font-weight: 500;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-.action-icon {
-  font-size: 16px;
+.text-clip .text-icon {
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.action-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 音频片段 */
+.audio-clip {
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
 }
 
-.action-progress {
+.audio-icon {
+  font-size: 14px;
+}
+
+.audio-waveform {
+  flex: 1;
+  height: 24px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.3) 0px,
+    rgba(255, 255, 255, 0.3) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border-radius: 2px;
+  position: relative;
+}
+
+.audio-waveform::before {
+  content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.15);
-  pointer-events: none;
-  transition: width 0.1s ease;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 10%,
+    rgba(255, 255, 255, 0.4) 20%,
+    rgba(255, 255, 255, 0.2) 30%,
+    rgba(255, 255, 255, 0.5) 40%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.4) 60%,
+    rgba(255, 255, 255, 0.2) 70%,
+    rgba(255, 255, 255, 0.5) 80%,
+    rgba(255, 255, 255, 0.3) 90%,
+    transparent 100%
+  );
 }
 
 /* 播放头 */
@@ -561,27 +748,23 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
   z-index: 100;
   pointer-events: none;
   transform: translateX(-50%);
 }
 
 .playhead-head {
-  width: 14px;
-  height: 14px;
-  background: #e94560;
-  border-radius: 2px;
-  transform: translateX(-6px) rotate(45deg);
-  margin-top: -7px;
-  box-shadow: 0 2px 4px rgba(233, 69, 96, 0.4);
+  position: relative;
+  left: -6px;
+  top: -28px;
 }
 
 .playhead-line {
   width: 2px;
-  height: calc(100% + 7px);
-  background: #e94560;
-  box-shadow: 0 0 8px rgba(233, 69, 96, 0.5);
+  height: calc(100% + 28px);
+  background: #8b5cf6;
+  margin-left: -1px;
+  margin-top: -16px;
 }
 
 /* 滚动条样式 */
@@ -590,45 +773,57 @@ onBeforeUnmount(() => {
 }
 
 .timeline-content::-webkit-scrollbar-track {
-  background: #1a1a2e;
+  background: #f3f4f6;
 }
 
 .timeline-content::-webkit-scrollbar-thumb {
-  background: #0f3460;
+  background: #d1d5db;
   border-radius: 4px;
 }
 
 .timeline-content::-webkit-scrollbar-thumb:hover {
-  background: #1a4a7a;
+  background: #9ca3af;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .timeline-toolbar {
-    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .toolbar-left {
+    order: 1;
+  }
+
+  .toolbar-center {
+    order: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .toolbar-right {
+    order: 2;
+  }
+
+  .tool-btn {
+    width: 32px;
+    height: 32px;
   }
 
   .play-btn {
-    width: 38px;
-    height: 38px;
-    font-size: 16px;
+    width: 36px;
+    height: 36px;
   }
 
   .time-display {
     font-size: 12px;
-    min-width: 120px;
   }
 
-  .track-labels {
-    width: 60px;
-  }
-
-  .track-label {
-    padding: 0 8px;
-    font-size: 11px;
-  }
-
-  .track-icon {
+  .zoom-controls {
     display: none;
   }
 }
