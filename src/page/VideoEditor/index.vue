@@ -385,47 +385,48 @@ const resetEffects = () => {
 							</div>
 							<p class="progress-text">正在导出... {{ processingProgress.toFixed(1) }}%</p>
 						</div>
-
-						<!-- 当前效果提示 -->
-						<div v-if="speed !== 1.0 || contrast !== 1.0" class="current-effects">
-							<span class="effects-label">当前效果：</span>
-							<span v-if="speed !== 1.0" class="effect-tag">{{ speed }}x 倍速</span>
-							<span v-if="contrast !== 1.0" class="effect-tag">对比度 {{ contrast.toFixed(2) }}</span>
-						</div>
-					</div>
-
-					<!-- 视频信息 -->
-					<div v-if="videoFile" class="video-info">
-						<p class="info-item">
-							<span class="info-label">文件名：</span>
-							<span class="info-value">{{ videoFile.name }}</span>
-						</p>
-						<p class="info-item">
-							<span class="info-label">文件大小：</span>
-							<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
-						</p>
-						<p class="info-item">
-							<span class="info-label">文件类型：</span>
-							<span class="info-value">{{ videoFile.type }}</span>
-						</p>
-						<p v-if="speed !== 1.0" class="info-item">
-							<span class="info-label">当前倍速：</span>
-							<span class="info-value">{{ speed.toFixed(2) }}x</span>
-						</p>
 					</div>
 				</div>
 
 				<!-- 右侧视频区域 -->
 				<div class="right-panel">
-					<div class="video-wrapper">
-						<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview"
-							:style="{ filter: `contrast(${contrast})` }">
-							您的浏览器不支持视频播放
-						</video>
+					<div class="video-content">
+						<div class="video-wrapper">
+							<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview"
+								:style="{ filter: `contrast(${contrast})` }">
+								您的浏览器不支持视频播放
+							</video>
+						</div>
+
+
 					</div>
 
 					<!-- 时间轴组件 -->
-					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" :videoFile="originalVideoFile" :speed="speed" />
+					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" :videoFile="originalVideoFile"
+						:speed="speed" />
+				</div>
+				<!-- 视频信息 -->
+				<div v-if="videoFile" class="video-info">
+					<p class="info-item">
+						<span class="info-label">文件名：</span>
+						<span class="info-value">{{ videoFile.name }}</span>
+					</p>
+					<p class="info-item">
+						<span class="info-label">文件大小：</span>
+						<span class="info-value">{{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB</span>
+					</p>
+					<p class="info-item">
+						<span class="info-label">文件类型：</span>
+						<span class="info-value">{{ videoFile.type }}</span>
+					</p>
+					<p v-if="speed !== 1.0" class="info-item">
+						<span class="info-label">当前倍速：</span>
+						<span class="info-value">{{ speed.toFixed(2) }}x</span>
+					</p>
+					<p v-if="contrast !== 1.0" class="info-item">
+						<span class="info-label">当前对比度：</span>
+						<span class="info-value">{{ contrast.toFixed(2) }}x</span>
+					</p>
 				</div>
 			</div>
 
@@ -630,6 +631,23 @@ const resetEffects = () => {
 	min-width: 0;
 }
 
+/* 视频内容区域（视频 + 信息并排） */
+.video-content {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+}
+
+.video-content .video-wrapper {
+	flex: 1;
+	min-width: 0;
+}
+
+.video-content .video-info {
+	flex: 0 0 200px;
+	margin: 0;
+}
+
 .video-wrapper {
 	width: 100%;
 	background: rgba(0, 0, 0, 0.3);
@@ -644,7 +662,7 @@ const resetEffects = () => {
 .video-preview {
 	width: 100%;
 	max-width: 100%;
-	max-height: 70vh;
+	max-height: 50vh;
 	height: auto;
 	border-radius: 8px;
 	background: #000;
@@ -1176,6 +1194,15 @@ const resetEffects = () => {
 
 	.video-preview {
 		max-height: 60vh;
+	}
+
+	.video-content {
+		flex-direction: column;
+	}
+
+	.video-content .video-info {
+		flex: 1;
+		width: 100%;
 	}
 }
 
