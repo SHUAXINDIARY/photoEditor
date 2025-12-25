@@ -4,6 +4,8 @@ import { MP4Clip } from "@webav/av-cliper";
 // SVG 图标路径
 const PlayIcon = new URL("../../assets/play.svg", import.meta.url).href;
 const PauseIcon = new URL("../../assets/pause.svg", import.meta.url).href;
+const ZoomInIcon = new URL("../../assets/zoom-in.svg", import.meta.url).href;
+const ZoomOutIcon = new URL("../../assets/zoom-out.svg", import.meta.url).href;
 
 // 组件参数
 interface Props {
@@ -341,32 +343,14 @@ onBeforeUnmount(() => {
         <!-- 缩放控制 -->
         <div class="zoom-controls">
           <button class="zoom-btn" @click="zoomOut" title="缩小">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35M8 11h6" />
-            </svg>
+            <img :src="ZoomOutIcon" alt="缩小" class="zoom-icon" />
           </button>
           <input type="range" class="zoom-slider" :value="scale"
             @input="scale = Number(($event.target as HTMLInputElement).value)" min="2" max="50" />
           <button class="zoom-btn" @click="zoomIn" title="放大">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" />
-            </svg>
+            <img :src="ZoomInIcon" alt="放大" class="zoom-icon" />
           </button>
         </div>
-        <!-- 全屏按钮 -->
-        <button class="tool-btn" title="全屏">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3" />
-          </svg>
-        </button>
-        <!-- 更多按钮 -->
-        <button class="tool-btn" title="更多">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-          </svg>
-        </button>
       </div>
     </div>
 
@@ -585,6 +569,11 @@ onBeforeUnmount(() => {
 
 .zoom-btn:hover {
   background: #f3f4f6;
+}
+
+.zoom-icon {
+  width: 16px;
+  height: 16px;
   color: #374151;
 }
 
