@@ -1,32 +1,51 @@
 import { MP4Clip, Combinator, OffscreenSprite } from "@webav/av-cliper";
+import type { VideoFilterOptions } from "../types";
+import { DEFAULT_FILTER_VALUES } from "../types";
+
+/**
+ * 视频滤镜参数（用于 GPU 处理）
+ */
+interface FilterParams {
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  shadows: number;
+  highlights: number;
+}
 
 /**
  * GPU 渲染器接口
  */
 interface IGPURenderer {
   init(): Promise<boolean>;
-  processFrame(videoFrame: VideoFrame, contrast: number): Uint8ClampedArray | null;
+  processFrame(videoFrame: VideoFrame, params: FilterParams): Uint8ClampedArray | null;
   destroy(): void;
   isAvailable(): boolean;
 }
 
 /**
  * WebGL 硬件加速渲染器
- * 使用 GPU 并行处理像素，大幅提升对比度等滤镜的处理速度
+ * 使用 GPU 并行处理像素，支持多种滤镜效果
  */
-class WebGLContrastRenderer implements IGPURenderer {
+class WebGLFilterRenderer implements IGPURenderer {
   private canvas: OffscreenCanvas;
   private gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
   private program: WebGLProgram | null = null;
   private texture: WebGLTexture | null = null;
   private framebuffer: WebGLFramebuffer | null = null;
   private outputTexture: WebGLTexture | null = null;
-  private contrastLocation: WebGLUniformLocation | null = null;
   private positionBuffer: WebGLBuffer | null = null;
   private texCoordBuffer: WebGLBuffer | null = null;
   private isInitialized: boolean = false;
   private width: number = 0;
   private height: number = 0;
+
+  // Uniform 位置
+  private contrastLocation: WebGLUniformLocation | null = null;
+  private saturationLocation: WebGLUniformLocation | null = null;
+  private temperatureLocation: WebGLUniformLocation | null = null;
+  private shadowsLocation: WebGLUniformLocation | null = null;
+  private highlightsLocation: WebGLUniformLocation | null = null;
 
   // 顶点着色器
   private static readonly VERTEX_SHADER = `
@@ -39,17 +58,58 @@ class WebGLContrastRenderer implements IGPURenderer {
     }
   `;
 
-  // 片段着色器 - 对比度处理
+  // 片段着色器 - 统一滤镜算法（与预览组件和 FFmpeg 保持一致）
   private static readonly FRAGMENT_SHADER = `
     precision mediump float;
     uniform sampler2D u_texture;
     uniform float u_contrast;
+    uniform float u_saturation;
+    uniform float u_temperature;
+    uniform float u_shadows;
+    uniform float u_highlights;
     varying vec2 v_texCoord;
+    
     void main() {
       vec4 color = texture2D(u_texture, v_texCoord);
-      // 对比度公式: (color - 0.5) * contrast + 0.5
-      vec3 adjusted = (color.rgb - 0.5) * u_contrast + 0.5;
-      gl_FragColor = vec4(clamp(adjusted, 0.0, 1.0), color.a);
+      vec3 rgb = color.rgb;
+      
+      // 1. 对比度调整 (与 FFmpeg eq=contrast 一致)
+      rgb = (rgb - 0.5) * u_contrast + 0.5;
+      
+      // 2. 饱和度调整 (与 FFmpeg eq=saturation 一致)
+      float gray = dot(rgb, vec3(0.299, 0.587, 0.114));
+      rgb = mix(vec3(gray), rgb, u_saturation);
+      
+      // 3. 阴影调整 - 使用 gamma 曲线 (与 FFmpeg eq=gamma 一致)
+      // shadows > 1 提亮暗部, shadows < 1 压暗暗部
+      if (u_shadows != 1.0) {
+        float gamma = 1.0 / pow(u_shadows, 0.6);
+        rgb = pow(rgb, vec3(gamma));
+      }
+      
+      // 4. 高光调整 - 使用 brightness (与 FFmpeg eq=brightness 一致)
+      if (u_highlights != 1.0) {
+        float brightness = (u_highlights - 1.0) * 0.3;
+        rgb = rgb + brightness;
+      }
+      
+      // 5. 色温调整 (与 FFmpeg colorbalance 一致)
+      if (u_temperature != 0.0) {
+        if (u_temperature > 0.0) {
+          // 暖色调：增加红/黄，减少蓝
+          rgb.r = rgb.r + u_temperature * 0.15;
+          rgb.g = rgb.g + u_temperature * 0.05;
+          rgb.b = rgb.b - u_temperature * 0.15;
+        } else {
+          // 冷色调：减少红，增加蓝
+          float cool = abs(u_temperature);
+          rgb.r = rgb.r - cool * 0.1;
+          rgb.g = rgb.g - cool * 0.02;
+          rgb.b = rgb.b + cool * 0.15;
+        }
+      }
+      
+      gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), color.a);
     }
   `;
 
@@ -79,8 +139,8 @@ class WebGLContrastRenderer implements IGPURenderer {
     const gl = this.gl;
 
     // 编译着色器
-    const vertexShader = this.compileShader(gl.VERTEX_SHADER, WebGLContrastRenderer.VERTEX_SHADER);
-    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, WebGLContrastRenderer.FRAGMENT_SHADER);
+    const vertexShader = this.compileShader(gl.VERTEX_SHADER, WebGLFilterRenderer.VERTEX_SHADER);
+    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, WebGLFilterRenderer.FRAGMENT_SHADER);
 
     if (!vertexShader || !fragmentShader) {
       console.warn("[WebGL] 着色器编译失败");
@@ -130,6 +190,10 @@ class WebGLContrastRenderer implements IGPURenderer {
 
     // 获取 uniform 位置
     this.contrastLocation = gl.getUniformLocation(this.program, "u_contrast");
+    this.saturationLocation = gl.getUniformLocation(this.program, "u_saturation");
+    this.temperatureLocation = gl.getUniformLocation(this.program, "u_temperature");
+    this.shadowsLocation = gl.getUniformLocation(this.program, "u_shadows");
+    this.highlightsLocation = gl.getUniformLocation(this.program, "u_highlights");
 
     // 创建输入纹理
     this.texture = gl.createTexture();
@@ -168,12 +232,12 @@ class WebGLContrastRenderer implements IGPURenderer {
   }
 
   /**
-   * 使用 GPU 处理视频帧的对比度
+   * 使用 GPU 处理视频帧
    * @param videoFrame 输入的视频帧
-   * @param contrast 对比度值
+   * @param params 滤镜参数
    * @returns 处理后的像素数据
    */
-  processFrame(videoFrame: VideoFrame, contrast: number): Uint8ClampedArray | null {
+  processFrame(videoFrame: VideoFrame, params: FilterParams): Uint8ClampedArray | null {
     if (!this.gl || !this.program || !this.texture) {
       return null;
     }
@@ -184,44 +248,12 @@ class WebGLContrastRenderer implements IGPURenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame);
 
-    // 设置对比度
-    gl.uniform1f(this.contrastLocation, contrast);
-
-    // 渲染
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    // 读取结果
-    const pixels = new Uint8ClampedArray(this.width * this.height * 4);
-    gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-    // WebGL 的 Y 轴是反的，需要翻转
-    const flipped = new Uint8ClampedArray(pixels.length);
-    const rowSize = this.width * 4;
-    for (let y = 0; y < this.height; y++) {
-      const srcOffset = y * rowSize;
-      const dstOffset = (this.height - 1 - y) * rowSize;
-      flipped.set(pixels.subarray(srcOffset, srcOffset + rowSize), dstOffset);
-    }
-
-    return flipped;
-  }
-
-  /**
-   * 直接处理 ImageBitmap 或 Canvas
-   */
-  processImageSource(source: ImageBitmap | OffscreenCanvas | HTMLCanvasElement, contrast: number): Uint8ClampedArray | null {
-    if (!this.gl || !this.program || !this.texture) {
-      return null;
-    }
-
-    const gl = this.gl;
-
-    // 上传图像到纹理
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-
-    // 设置对比度
-    gl.uniform1f(this.contrastLocation, contrast);
+    // 设置滤镜参数
+    gl.uniform1f(this.contrastLocation, params.contrast);
+    gl.uniform1f(this.saturationLocation, params.saturation);
+    gl.uniform1f(this.temperatureLocation, params.temperature);
+    gl.uniform1f(this.shadowsLocation, params.shadows);
+    gl.uniform1f(this.highlightsLocation, params.highlights);
 
     // 渲染
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -591,28 +623,49 @@ export class WebAVWrapper {
   }
 
   /**
-   * 应用多个视频滤镜（倍速和对比度可以叠加）
+   * 检查是否需要应用图像滤镜
+   */
+  private needsImageFilters(options: VideoFilterOptions): boolean {
+    const contrast = options.contrast ?? DEFAULT_FILTER_VALUES.contrast;
+    const saturation = options.saturation ?? DEFAULT_FILTER_VALUES.saturation;
+    const temperature = options.temperature ?? DEFAULT_FILTER_VALUES.temperature;
+    const shadows = options.shadows ?? DEFAULT_FILTER_VALUES.shadows;
+    const highlights = options.highlights ?? DEFAULT_FILTER_VALUES.highlights;
+
+    return (
+      contrast !== DEFAULT_FILTER_VALUES.contrast ||
+      saturation !== DEFAULT_FILTER_VALUES.saturation ||
+      temperature !== DEFAULT_FILTER_VALUES.temperature ||
+      shadows !== DEFAULT_FILTER_VALUES.shadows ||
+      highlights !== DEFAULT_FILTER_VALUES.highlights
+    );
+  }
+
+  /**
+   * 应用多个视频滤镜
    * 
    * 实现原理：
    * - 倍速：使用 clip.tick(outputTime * speed) 从源视频读取帧
-   * - 对比度：使用 Canvas 对每帧进行像素级处理
+   * - 图像滤镜：使用 WebGL GPU 加速处理每帧
    * 
    * @param inputFile 输入视频文件
-   * @param options 滤镜选项
-   * @param options.speed 倍速值（可选，默认 1.0）
-   * @param options.contrast 对比度值（可选，默认 1.0）
+   * @param options 滤镜选项（倍速、对比度、饱和度、色温、阴影、高光）
    * @returns 处理后的视频 Blob
    */
   async applyFilters(
     inputFile: File,
-    options: { speed?: number; contrast?: number } = {}
+    options: VideoFilterOptions = {}
   ): Promise<Blob> {
     if (!this.isLoaded) {
       await this.load();
     }
 
-    const speed = options.speed ?? 1.0;
-    const contrast = options.contrast ?? 1.0;
+    const speed = options.speed ?? DEFAULT_FILTER_VALUES.speed;
+    const contrast = options.contrast ?? DEFAULT_FILTER_VALUES.contrast;
+    const saturation = options.saturation ?? DEFAULT_FILTER_VALUES.saturation;
+    const temperature = options.temperature ?? DEFAULT_FILTER_VALUES.temperature;
+    const shadows = options.shadows ?? DEFAULT_FILTER_VALUES.shadows;
+    const highlights = options.highlights ?? DEFAULT_FILTER_VALUES.highlights;
 
     if (speed <= 0) {
       throw new Error("倍速值必须大于 0");
@@ -622,18 +675,23 @@ export class WebAVWrapper {
       throw new Error("对比度值必须大于 0");
     }
 
-    // 如果两个都是默认值，直接返回原文件
-    if (speed === 1.0 && contrast === 1.0) {
+    // 检查是否需要处理
+    const needsImageProcessing = this.needsImageFilters(options);
+    const needsSpeedProcessing = speed !== DEFAULT_FILTER_VALUES.speed;
+
+    // 如果都是默认值，直接返回原文件
+    if (!needsImageProcessing && !needsSpeedProcessing) {
       return new Blob([await inputFile.arrayBuffer()], { type: "video/mp4" });
     }
 
     // 如果只需要调整倍速，使用专门的倍速方法
-    if (contrast === 1.0) {
+    if (!needsImageProcessing) {
       return this.changeSpeed(inputFile, speed);
     }
 
     try {
-      console.log("[WebAV] 开始应用滤镜，倍速:", speed, "对比度:", contrast);
+      console.log("[WebAV] 开始应用滤镜");
+      console.log("[WebAV] 效果参数:", { speed, contrast, saturation, temperature, shadows, highlights });
       this.updateProgress(5);
 
       // 读取视频文件
@@ -659,18 +717,25 @@ export class WebAVWrapper {
         height,
         originalDurationSec: originalDurationUs / 1e6,
         newDurationSec: newDurationUs / 1e6,
-        speed,
-        contrast,
       });
 
       this.updateProgress(15);
+
+      // 准备滤镜参数
+      const filterParams: FilterParams = {
+        contrast,
+        saturation,
+        temperature,
+        shadows,
+        highlights,
+      };
 
       // 尝试使用 WebGL 硬件加速
       let gpuRenderer: IGPURenderer | null = null;
       let useGPU = false;
       let gpuType = "CPU";
 
-      const webglRenderer = new WebGLContrastRenderer(width, height);
+      const webglRenderer = new WebGLFilterRenderer(width, height);
       if (await webglRenderer.init()) {
         gpuRenderer = webglRenderer;
         useGPU = true;
@@ -686,92 +751,77 @@ export class WebAVWrapper {
         throw new Error("无法创建 Canvas 上下文");
       }
 
-      // CPU 回退：预计算对比度 LUT
-      const contrastLUT = new Uint8ClampedArray(256);
-      for (let i = 0; i < 256; i++) {
-        contrastLUT[i] = Math.max(0, Math.min(255, (i - 128) * contrast + 128));
-      }
-
       // 性能优化：预分配 ImageData 对象，避免每帧重复创建
       const reusableImageData = ctx.createImageData(width, height);
       const pixelData = reusableImageData.data;
       const pixelCount = width * height * 4;
 
-      // CPU 对比度处理函数（使用 LUT + 循环展开优化）
-      const applyContrastCPU = () => {
-        // 每次处理 16 个像素（64 字节），减少循环开销
-        let i = 0;
-        const len16 = pixelCount - 63;
-        
-        // 主循环：每次处理 16 像素
-        for (; i < len16; i += 64) {
-          pixelData[i] = contrastLUT[pixelData[i]];
-          pixelData[i + 1] = contrastLUT[pixelData[i + 1]];
-          pixelData[i + 2] = contrastLUT[pixelData[i + 2]];
-          pixelData[i + 4] = contrastLUT[pixelData[i + 4]];
-          pixelData[i + 5] = contrastLUT[pixelData[i + 5]];
-          pixelData[i + 6] = contrastLUT[pixelData[i + 6]];
-          pixelData[i + 8] = contrastLUT[pixelData[i + 8]];
-          pixelData[i + 9] = contrastLUT[pixelData[i + 9]];
-          pixelData[i + 10] = contrastLUT[pixelData[i + 10]];
-          pixelData[i + 12] = contrastLUT[pixelData[i + 12]];
-          pixelData[i + 13] = contrastLUT[pixelData[i + 13]];
-          pixelData[i + 14] = contrastLUT[pixelData[i + 14]];
-          pixelData[i + 16] = contrastLUT[pixelData[i + 16]];
-          pixelData[i + 17] = contrastLUT[pixelData[i + 17]];
-          pixelData[i + 18] = contrastLUT[pixelData[i + 18]];
-          pixelData[i + 20] = contrastLUT[pixelData[i + 20]];
-          pixelData[i + 21] = contrastLUT[pixelData[i + 21]];
-          pixelData[i + 22] = contrastLUT[pixelData[i + 22]];
-          pixelData[i + 24] = contrastLUT[pixelData[i + 24]];
-          pixelData[i + 25] = contrastLUT[pixelData[i + 25]];
-          pixelData[i + 26] = contrastLUT[pixelData[i + 26]];
-          pixelData[i + 28] = contrastLUT[pixelData[i + 28]];
-          pixelData[i + 29] = contrastLUT[pixelData[i + 29]];
-          pixelData[i + 30] = contrastLUT[pixelData[i + 30]];
-          pixelData[i + 32] = contrastLUT[pixelData[i + 32]];
-          pixelData[i + 33] = contrastLUT[pixelData[i + 33]];
-          pixelData[i + 34] = contrastLUT[pixelData[i + 34]];
-          pixelData[i + 36] = contrastLUT[pixelData[i + 36]];
-          pixelData[i + 37] = contrastLUT[pixelData[i + 37]];
-          pixelData[i + 38] = contrastLUT[pixelData[i + 38]];
-          pixelData[i + 40] = contrastLUT[pixelData[i + 40]];
-          pixelData[i + 41] = contrastLUT[pixelData[i + 41]];
-          pixelData[i + 42] = contrastLUT[pixelData[i + 42]];
-          pixelData[i + 44] = contrastLUT[pixelData[i + 44]];
-          pixelData[i + 45] = contrastLUT[pixelData[i + 45]];
-          pixelData[i + 46] = contrastLUT[pixelData[i + 46]];
-          pixelData[i + 48] = contrastLUT[pixelData[i + 48]];
-          pixelData[i + 49] = contrastLUT[pixelData[i + 49]];
-          pixelData[i + 50] = contrastLUT[pixelData[i + 50]];
-          pixelData[i + 52] = contrastLUT[pixelData[i + 52]];
-          pixelData[i + 53] = contrastLUT[pixelData[i + 53]];
-          pixelData[i + 54] = contrastLUT[pixelData[i + 54]];
-          pixelData[i + 56] = contrastLUT[pixelData[i + 56]];
-          pixelData[i + 57] = contrastLUT[pixelData[i + 57]];
-          pixelData[i + 58] = contrastLUT[pixelData[i + 58]];
-          pixelData[i + 60] = contrastLUT[pixelData[i + 60]];
-          pixelData[i + 61] = contrastLUT[pixelData[i + 61]];
-          pixelData[i + 62] = contrastLUT[pixelData[i + 62]];
-        }
-        
-        // 处理剩余像素
-        for (; i < pixelCount; i += 4) {
-          pixelData[i] = contrastLUT[pixelData[i]];
-          pixelData[i + 1] = contrastLUT[pixelData[i + 1]];
-          pixelData[i + 2] = contrastLUT[pixelData[i + 2]];
+      // CPU 滤镜处理函数（与 WebGL 着色器算法一致）
+      const applyFiltersCPU = () => {
+        // 预计算 gamma 值
+        const gamma = shadows !== 1.0 ? 1.0 / Math.pow(shadows, 0.6) : 1.0;
+
+        for (let i = 0; i < pixelCount; i += 4) {
+          let r = pixelData[i] / 255;
+          let g = pixelData[i + 1] / 255;
+          let b = pixelData[i + 2] / 255;
+
+          // 1. 对比度 (与 WebGL 一致)
+          r = (r - 0.5) * contrast + 0.5;
+          g = (g - 0.5) * contrast + 0.5;
+          b = (b - 0.5) * contrast + 0.5;
+
+          // 2. 饱和度 (与 WebGL 一致)
+          if (saturation !== 1.0) {
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            r = gray + (r - gray) * saturation;
+            g = gray + (g - gray) * saturation;
+            b = gray + (b - gray) * saturation;
+          }
+
+          // 3. 阴影 - gamma 曲线 (与 WebGL 一致)
+          if (shadows !== 1.0) {
+            r = Math.pow(Math.max(0, r), gamma);
+            g = Math.pow(Math.max(0, g), gamma);
+            b = Math.pow(Math.max(0, b), gamma);
+          }
+
+          // 4. 高光 - brightness (与 WebGL 一致)
+          if (highlights !== 1.0) {
+            const brightness = (highlights - 1.0) * 0.3;
+            r = r + brightness;
+            g = g + brightness;
+            b = b + brightness;
+          }
+
+          // 5. 色温 (与 WebGL 一致)
+          if (temperature !== 0) {
+            if (temperature > 0) {
+              r = r + temperature * 0.15;
+              g = g + temperature * 0.05;
+              b = b - temperature * 0.15;
+            } else {
+              const cool = Math.abs(temperature);
+              r = r - cool * 0.1;
+              g = g - cool * 0.02;
+              b = b + cool * 0.15;
+            }
+          }
+
+          // 转回 0-255 并 clamp
+          pixelData[i] = Math.max(0, Math.min(255, r * 255));
+          pixelData[i + 1] = Math.max(0, Math.min(255, g * 255));
+          pixelData[i + 2] = Math.max(0, Math.min(255, b * 255));
         }
       };
 
-      console.log(`[WebAV] 使用 ${gpuType} 处理对比度`);
+      console.log(`[WebAV] 使用 ${gpuType} 处理滤镜`);
 
       // 帧计数用于进度更新
       let frameCount = 0;
       const estimatedFrames = Math.ceil(originalDurationUs / (1_000_000 / 30));
-      // 性能优化：预计算进度更新间隔，减少取模运算
       const progressInterval = Math.max(10, Math.floor(estimatedFrames / 20));
       let nextProgressUpdate = progressInterval;
-      // 性能优化：预计算速度倒数，避免每帧重复除法
       const speedInverse = 1 / speed;
 
       // 使用 WebAV 的 tickInterceptor 直接处理每一帧
@@ -781,20 +831,18 @@ export class WebAVWrapper {
           const originalTimestamp = video.timestamp;
           const originalDuration = video.duration;
 
-          // 优先使用 GPU 处理（WebGL）
+          // 优先使用 GPU 处理
           if (useGPU && gpuRenderer) {
-            const processedPixels = gpuRenderer.processFrame(video, contrast);
+            const processedPixels = gpuRenderer.processFrame(video, filterParams);
             if (processedPixels) {
-              // GPU 处理成功，直接复制到预分配的 ImageData
               pixelData.set(processedPixels);
               ctx.putImageData(reusableImageData, 0, 0);
             } else {
               // GPU 失败，回退到 CPU
               ctx.drawImage(video, 0, 0);
-              // 直接读取到预分配的 ImageData
               const tempData = ctx.getImageData(0, 0, width, height);
               pixelData.set(tempData.data);
-              applyContrastCPU();
+              applyFiltersCPU();
               ctx.putImageData(reusableImageData, 0, 0);
             }
           } else {
@@ -802,11 +850,11 @@ export class WebAVWrapper {
             ctx.drawImage(video, 0, 0);
             const tempData = ctx.getImageData(0, 0, width, height);
             pixelData.set(tempData.data);
-            applyContrastCPU();
+            applyFiltersCPU();
             ctx.putImageData(reusableImageData, 0, 0);
           }
 
-          // 创建新的 VideoFrame（使用预计算的速度倒数）
+          // 创建新的 VideoFrame
           const newFrame = new VideoFrame(canvas, {
             timestamp: originalTimestamp * speedInverse,
             duration: originalDuration ? originalDuration * speedInverse : undefined,
@@ -815,7 +863,7 @@ export class WebAVWrapper {
           video.close();
           tickRet.video = newFrame;
 
-          // 更新进度（使用预计算的间隔，避免取模）
+          // 更新进度
           frameCount++;
           if (frameCount >= nextProgressUpdate) {
             nextProgressUpdate += progressInterval;

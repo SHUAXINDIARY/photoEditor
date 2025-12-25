@@ -1,5 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import type { VideoFilterOptions } from "../types";
+import { DEFAULT_FILTER_VALUES } from "../types";
 
 const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/esm";
 
@@ -321,16 +323,118 @@ export class FFmpegWrapper {
   }
 
   /**
-   * 应用多个视频滤镜（倍速和对比度可以叠加）
-   * @param inputFile 输入视频文件
+   * 构建 FFmpeg eq 滤镜参数
+   * eq 滤镜支持: contrast, brightness, saturation, gamma 等
    * @param options 滤镜选项
-   * @param options.speed 倍速值（可选，默认 1.0）
-   * @param options.contrast 对比度值（可选，默认 1.0）
+   * @returns eq 滤镜字符串，如果没有需要应用的效果则返回 null
+   */
+  private buildEqFilter(options: VideoFilterOptions): string | null {
+    const eqParams: string[] = [];
+    
+    const contrast = options.contrast ?? DEFAULT_FILTER_VALUES.contrast;
+    const saturation = options.saturation ?? DEFAULT_FILTER_VALUES.saturation;
+    const shadows = options.shadows ?? DEFAULT_FILTER_VALUES.shadows;
+    const highlights = options.highlights ?? DEFAULT_FILTER_VALUES.highlights;
+    
+    if (contrast !== 1.0) {
+      eqParams.push(`contrast=${contrast}`);
+    }
+    
+    if (saturation !== 1.0) {
+      eqParams.push(`saturation=${saturation}`);
+    }
+    
+    // 阴影/高光参数
+    const shadowHighlightParams = this.buildShadowHighlightParams(shadows, highlights);
+    if (shadowHighlightParams) {
+      eqParams.push(...shadowHighlightParams);
+    }
+    
+    return eqParams.length > 0 ? `eq=${eqParams.join(":")}` : null;
+  }
+
+  /**
+   * 构建色温滤镜
+   * 使用 colorbalance 滤镜调整色温
+   * 参数与 WebGL 着色器保持一致
+   * colorbalance 参数范围: -1 到 1
+   * @param temperature 色温值 (-1 到 1)
+   * @returns colorbalance 滤镜字符串，如果不需要则返回 null
+   */
+  private buildTemperatureFilter(temperature: number): string | null {
+    if (temperature === 0) return null;
+    
+    // 色温调整：与 WebGL 着色器一致
+    // WebGL: rgb.r += temperature * 0.15, rgb.g += temperature * 0.05, rgb.b -= temperature * 0.15
+    // colorbalance 参数范围是 -1 到 1，需要确保值在有效范围内
+    const warmth = temperature;
+    
+    // 辅助函数：限制值在 -1 到 1 范围内并格式化
+    const clamp = (val: number): string => {
+      const clamped = Math.max(-1, Math.min(1, val));
+      return clamped.toFixed(4);
+    };
+    
+    if (warmth > 0) {
+      // 暖色调：增加红/黄，减少蓝
+      const rs = clamp(warmth * 0.15);
+      const gs = clamp(warmth * 0.05);
+      const bs = clamp(-warmth * 0.15);
+      return `colorbalance=rs=${rs}:gs=${gs}:bs=${bs}:rm=${rs}:gm=${gs}:bm=${bs}:rh=${rs}:gh=${gs}:bh=${bs}`;
+    } else {
+      // 冷色调：减少红，增加蓝
+      // WebGL: rgb.r -= cool * 0.1, rgb.g -= cool * 0.02, rgb.b += cool * 0.15
+      const coolness = Math.abs(warmth);
+      const rs = clamp(-coolness * 0.1);
+      const gs = clamp(-coolness * 0.02);
+      const bs = clamp(coolness * 0.15);
+      return `colorbalance=rs=${rs}:gs=${gs}:bs=${bs}:rm=${rs}:gm=${gs}:bm=${bs}:rh=${rs}:gh=${gs}:bh=${bs}`;
+    }
+  }
+
+  /**
+   * 构建阴影/高光滤镜
+   * 使用 eq 滤镜的 gamma 和 brightness 参数
+   * 参数与 WebGL 着色器保持一致
+   * @param shadows 阴影值 (0-2)
+   * @param highlights 高光值 (0-2)
+   * @returns eq 滤镜参数数组，如果不需要则返回 null
+   */
+  private buildShadowHighlightParams(shadows: number, highlights: number): string[] | null {
+    if (shadows === 1.0 && highlights === 1.0) return null;
+    
+    const params: string[] = [];
+    
+    // 阴影调整：使用 gamma 参数
+    // WebGL: rgb = pow(rgb, vec3(gamma)), gamma = 1.0 / pow(shadows, 0.6)
+    if (shadows !== 1.0) {
+      const gamma = 1.0 / Math.pow(shadows, 0.6);
+      // 限制 gamma 范围，避免极端值
+      const clampedGamma = Math.max(0.4, Math.min(2.5, gamma));
+      params.push(`gamma=${clampedGamma.toFixed(3)}`);
+    }
+    
+    // 高光调整：使用 brightness 参数
+    // WebGL: rgb = rgb + brightness, brightness = (highlights - 1.0) * 0.3
+    if (highlights !== 1.0) {
+      const brightness = (highlights - 1.0) * 0.3;
+      // 限制 brightness 范围
+      const clampedBrightness = Math.max(-0.5, Math.min(0.5, brightness));
+      params.push(`brightness=${clampedBrightness.toFixed(3)}`);
+    }
+    
+    return params.length > 0 ? params : null;
+  }
+
+  /**
+   * 应用多个视频滤镜
+   * @param inputFile 输入视频文件
+   * @param options 滤镜选项（倍速、对比度、饱和度、色温、阴影、高光）
    * @returns 处理后的视频 Blob
    */
   async applyFilters(
     inputFile: File,
-    options: { speed?: number; contrast?: number } = {}
+    options: VideoFilterOptions = {}
   ): Promise<Blob> {
     if (!this.isLoaded) {
       await this.load();
@@ -341,8 +445,12 @@ export class FFmpegWrapper {
       throw new Error("FFmpeg 未正确加载，请稍后重试");
     }
 
-    const speed = options.speed ?? 1.0;
-    const contrast = options.contrast ?? 1.0;
+    const speed = options.speed ?? DEFAULT_FILTER_VALUES.speed;
+    const contrast = options.contrast ?? DEFAULT_FILTER_VALUES.contrast;
+    const saturation = options.saturation ?? DEFAULT_FILTER_VALUES.saturation;
+    const temperature = options.temperature ?? DEFAULT_FILTER_VALUES.temperature;
+    const shadows = options.shadows ?? DEFAULT_FILTER_VALUES.shadows;
+    const highlights = options.highlights ?? DEFAULT_FILTER_VALUES.highlights;
 
     if (speed <= 0) {
       throw new Error("倍速值必须大于 0");
@@ -374,15 +482,22 @@ export class FFmpegWrapper {
       console.log("[FFmpeg] 文件写入成功");
 
       // 构建滤镜链
-      // 注意：先应用图像处理（对比度），再应用时间处理（倍速）
+      // 顺序：eq滤镜(对比度、饱和度、阴影、高光) -> 色温 -> 倍速
       const filters: string[] = [];
 
-      // 如果对比度不为 1.0，添加对比度滤镜
-      if (contrast !== 1.0) {
-        filters.push(`eq=contrast=${contrast}`);
+      // 1. eq 滤镜（对比度、饱和度、阴影、高光）
+      const eqFilter = this.buildEqFilter({ contrast, saturation, shadows, highlights });
+      if (eqFilter) {
+        filters.push(eqFilter);
       }
 
-      // 如果倍速不为 1.0，添加倍速滤镜
+      // 2. 色温滤镜
+      const temperatureFilter = this.buildTemperatureFilter(temperature);
+      if (temperatureFilter) {
+        filters.push(temperatureFilter);
+      }
+
+      // 3. 倍速滤镜（最后应用）
       if (speed !== 1.0) {
         filters.push(`setpts=${1 / speed}*PTS`);
       }
@@ -399,7 +514,9 @@ export class FFmpegWrapper {
       // 移除音频轨道并设置编码参数
       ffmpegArgs.push("-an", "-c:v", "libx264", "-preset", "ultrafast", outputFileName);
 
-      console.log("[FFmpeg] 开始执行 FFmpeg 命令，倍速:", speed, "对比度:", contrast);
+      console.log("[FFmpeg] 开始执行 FFmpeg 命令");
+      console.log("[FFmpeg] 效果参数:", { speed, contrast, saturation, temperature, shadows, highlights });
+      console.log("[FFmpeg] 滤镜链:", filters.join(","));
       await this.ffmpeg.exec(ffmpegArgs);
 
       // 读取输出文件

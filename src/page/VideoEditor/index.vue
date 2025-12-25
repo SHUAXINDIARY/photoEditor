@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount, watch } from "vue";
+import { ref, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video";
 import TimeLine from "../../components/TimeLine/TimeLine.vue";
 import EffectsPanel from "../../components/EffectsPanel/index.vue";
+import VideoPreview from "../../components/VideoPreview/index.vue";
 import { toastWarning, toastError, toastSuccess } from "../../utils/toast";
+import { DEFAULT_FILTER_VALUES, isDefaultFilters, getActiveEffects, getEffectDescriptions } from "../../package/Video/types";
 
 const router = useRouter();
 const videoUrl = ref<string>("");
@@ -12,8 +14,15 @@ const videoFile = ref<File | null>(null);
 const originalVideoFile = ref<File | null>(null); // 保存原始文件
 const videoEditor = ref<VideoEditor | null>(null);
 const videoElement = ref<HTMLVideoElement | null>(null); // 视频 DOM 元素
-const speed = ref<number>(1.0); // 倍速值，默认 1.0
-const contrast = ref<number>(1.0); // 对比度值，默认 1.0
+
+// 效果值
+const speed = ref<number>(DEFAULT_FILTER_VALUES.speed);
+const contrast = ref<number>(DEFAULT_FILTER_VALUES.contrast);
+const saturation = ref<number>(DEFAULT_FILTER_VALUES.saturation);
+const temperature = ref<number>(DEFAULT_FILTER_VALUES.temperature);
+const shadows = ref<number>(DEFAULT_FILTER_VALUES.shadows);
+const highlights = ref<number>(DEFAULT_FILTER_VALUES.highlights);
+
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
@@ -22,12 +31,10 @@ const ffmpegLoadProgress = ref<number>(0);
 const ffmpegLoadError = ref<string>("");
 const processingMode = ref<VideoProcessingMode | null>(null); // 处理模式，初始为 null，用户选择后才设置
 
-// 实时预览：监听倍速变化，直接修改视频播放速度
-watch(speed, (newSpeed) => {
-	if (videoElement.value) {
-		videoElement.value.playbackRate = newSpeed;
-	}
-});
+// 处理 VideoPreview 组件返回的视频元素
+const handleVideoElement = (el: HTMLVideoElement) => {
+	videoElement.value = el;
+};
 
 // 初始化 VideoEditor
 const initFFmpeg = async (mode: VideoProcessingMode) => {
@@ -116,8 +123,13 @@ const handleVideoUpload = (event: Event) => {
 
 	videoFile.value = file;
 	originalVideoFile.value = file; // 保存原始文件
-	speed.value = 1.0; // 重置倍速
-	contrast.value = 1.0; // 重置对比度
+	// 重置所有效果值
+	speed.value = DEFAULT_FILTER_VALUES.speed;
+	contrast.value = DEFAULT_FILTER_VALUES.contrast;
+	saturation.value = DEFAULT_FILTER_VALUES.saturation;
+	temperature.value = DEFAULT_FILTER_VALUES.temperature;
+	shadows.value = DEFAULT_FILTER_VALUES.shadows;
+	highlights.value = DEFAULT_FILTER_VALUES.highlights;
 	processingProgress.value = 0;
 
 	// 创建视频 URL 用于预览
@@ -134,8 +146,13 @@ const clearVideo = () => {
 	videoUrl.value = "";
 	videoFile.value = null;
 	originalVideoFile.value = null;
-	speed.value = 1.0;
-	contrast.value = 1.0;
+	// 重置所有效果值
+	speed.value = DEFAULT_FILTER_VALUES.speed;
+	contrast.value = DEFAULT_FILTER_VALUES.contrast;
+	saturation.value = DEFAULT_FILTER_VALUES.saturation;
+	temperature.value = DEFAULT_FILTER_VALUES.temperature;
+	shadows.value = DEFAULT_FILTER_VALUES.shadows;
+	highlights.value = DEFAULT_FILTER_VALUES.highlights;
 	processingProgress.value = 0;
 	// 重置文件输入
 	const fileInput = document.getElementById("video-input") as HTMLInputElement;
@@ -144,7 +161,7 @@ const clearVideo = () => {
 	}
 };
 
-// 导出视频（应用当前的倍速和对比度设置）
+// 导出视频（应用当前的所有效果设置）
 const exportVideo = async () => {
 	console.time("视频导出")
 	if (!videoEditor.value || !originalVideoFile.value) {
@@ -157,11 +174,18 @@ const exportVideo = async () => {
 		return;
 	}
 
-	const speedToApply = speed.value;
-	const contrastToApply = contrast.value;
+	// 收集所有效果值
+	const filterOptions = {
+		speed: speed.value,
+		contrast: contrast.value,
+		saturation: saturation.value,
+		temperature: temperature.value,
+		shadows: shadows.value,
+		highlights: highlights.value,
+	};
 
-	// 如果倍速和对比度都是默认值，直接下载原始视频
-	if (speedToApply === 1.0 && contrastToApply === 1.0) {
+	// 如果所有效果都是默认值，直接下载原始视频
+	if (isDefaultFilters(filterOptions)) {
 		const link = document.createElement("a");
 		link.href = videoUrl.value;
 		link.download = originalVideoFile.value.name;
@@ -174,13 +198,10 @@ const exportVideo = async () => {
 		isProcessing.value = true;
 		processingProgress.value = 0;
 
-		// 使用 applyFilters 同时应用倍速和对比度
+		// 使用 applyFilters 应用所有效果
 		const outputBlob = await videoEditor.value.applyFilters(
 			originalVideoFile.value,
-			{
-				speed: speedToApply,
-				contrast: contrastToApply,
-			},
+			filterOptions,
 			(progress) => {
 				processingProgress.value = progress;
 			}
@@ -189,9 +210,7 @@ const exportVideo = async () => {
 		// 创建下载链接
 		const downloadUrl = URL.createObjectURL(outputBlob);
 		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
-		const effects = [];
-		if (speedToApply !== 1.0) effects.push(`speed${speedToApply}`);
-		if (contrastToApply !== 1.0) effects.push(`contrast${contrastToApply.toFixed(2)}`);
+		const effects = getActiveEffects(filterOptions);
 		const newFileName = `${fileName}_${effects.join("_")}.mp4`;
 
 		const link = document.createElement("a");
@@ -202,10 +221,8 @@ const exportVideo = async () => {
 		// 释放 URL
 		setTimeout(() => URL.revokeObjectURL(downloadUrl), 100);
 
-		const effectNames = [];
-		if (speedToApply !== 1.0) effectNames.push(`${speedToApply}x 倍速`);
-		if (contrastToApply !== 1.0) effectNames.push(`对比度 ${contrastToApply.toFixed(2)}`);
-		toastSuccess(`视频导出成功！已应用：${effectNames.join(" + ")}`);
+		const effectDescriptions = getEffectDescriptions(filterOptions);
+		toastSuccess(`视频导出成功！已应用：${effectDescriptions.join(" + ")}`);
 	} catch (error) {
 		console.error("视频导出失败:", error);
 		toastError(`视频导出失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -218,8 +235,12 @@ const exportVideo = async () => {
 
 // 重置效果
 const resetEffects = () => {
-	speed.value = 1.0;
-	contrast.value = 1.0;
+	speed.value = DEFAULT_FILTER_VALUES.speed;
+	contrast.value = DEFAULT_FILTER_VALUES.contrast;
+	saturation.value = DEFAULT_FILTER_VALUES.saturation;
+	temperature.value = DEFAULT_FILTER_VALUES.temperature;
+	shadows.value = DEFAULT_FILTER_VALUES.shadows;
+	highlights.value = DEFAULT_FILTER_VALUES.highlights;
 	if (videoElement.value) {
 		videoElement.value.playbackRate = 1.0;
 	}
@@ -338,23 +359,25 @@ const resetEffects = () => {
 			<div v-if="videoUrl" class="video-preview-section">
 				<!-- 左侧控制面板 -->
 				<div class="left-panel">
-					<EffectsPanel :speed="speed" :contrast="contrast" :isProcessing="isProcessing"
-						:isFFmpegLoaded="isFFmpegLoaded" :hasVideoFile="!!originalVideoFile"
-						:processingProgress="processingProgress" @update:speed="speed = $event"
-						@update:contrast="contrast = $event" @reset="resetEffects" @export="exportVideo" />
+					<EffectsPanel :speed="speed" :contrast="contrast" :saturation="saturation"
+						:temperature="temperature" :shadows="shadows" :highlights="highlights"
+						:isProcessing="isProcessing" :isFFmpegLoaded="isFFmpegLoaded"
+						:hasVideoFile="!!originalVideoFile" :processingProgress="processingProgress"
+						@update:speed="speed = $event" @update:contrast="contrast = $event"
+						@update:saturation="saturation = $event" @update:temperature="temperature = $event"
+						@update:shadows="shadows = $event" @update:highlights="highlights = $event"
+						@reset="resetEffects" @export="exportVideo" />
 				</div>
 
 				<!-- 右侧视频区域 -->
 				<div class="right-panel">
 					<div class="video-content">
 						<div class="video-wrapper">
-							<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview"
-								:style="{ filter: `contrast(${contrast})` }">
-								您的浏览器不支持视频播放
-							</video>
+							<!-- WebGL 视频预览组件 -->
+							<VideoPreview :videoUrl="videoUrl" :contrast="contrast" :saturation="saturation"
+								:temperature="temperature" :shadows="shadows" :highlights="highlights" :speed="speed"
+								@videoElement="handleVideoElement" class="video-preview" />
 						</div>
-
-
 					</div>
 
 					<!-- 时间轴组件 -->
@@ -375,13 +398,30 @@ const resetEffects = () => {
 						<span class="info-label">文件类型：</span>
 						<span class="info-value">{{ videoFile.type }}</span>
 					</p>
+					<!-- 效果参数信息 -->
 					<p v-if="speed !== 1.0" class="info-item">
-						<span class="info-label">当前倍速：</span>
-						<span class="info-value">{{ speed.toFixed(2) }}x</span>
+						<span class="info-label">倍速：</span>
+						<span class="info-value effect-value">{{ speed.toFixed(2) }}x</span>
 					</p>
 					<p v-if="contrast !== 1.0" class="info-item">
-						<span class="info-label">当前对比度：</span>
-						<span class="info-value">{{ contrast.toFixed(2) }}x</span>
+						<span class="info-label">对比度：</span>
+						<span class="info-value effect-value">{{ contrast.toFixed(2) }}</span>
+					</p>
+					<p v-if="saturation !== 1.0" class="info-item">
+						<span class="info-label">饱和度：</span>
+						<span class="info-value effect-value">{{ saturation.toFixed(2) }}</span>
+					</p>
+					<p v-if="temperature !== 0" class="info-item">
+						<span class="info-label">色温：</span>
+						<span class="info-value effect-value">{{ temperature >= 0 ? '+' : '' }}{{ temperature.toFixed(2) }}</span>
+					</p>
+					<p v-if="shadows !== 1.0" class="info-item">
+						<span class="info-label">阴影：</span>
+						<span class="info-value effect-value">{{ shadows.toFixed(2) }}</span>
+					</p>
+					<p v-if="highlights !== 1.0" class="info-item">
+						<span class="info-label">高光：</span>
+						<span class="info-value effect-value">{{ highlights.toFixed(2) }}</span>
 					</p>
 				</div>
 			</div>
@@ -648,6 +688,12 @@ const resetEffects = () => {
 .info-value {
 	opacity: 0.8;
 	word-break: break-all;
+}
+
+.info-value.effect-value {
+	color: #ffd700;
+	opacity: 1;
+	font-weight: 600;
 }
 
 .tips {

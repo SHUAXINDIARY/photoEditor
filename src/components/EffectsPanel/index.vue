@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import type { VideoFilterOptions } from "../../package/Video/types";
+import { DEFAULT_FILTER_VALUES } from "../../package/Video/types";
 
 // 组件参数
 interface Props {
 	speed: number;
 	contrast: number;
+	saturation: number;
+	temperature: number;
+	shadows: number;
+	highlights: number;
 	isProcessing: boolean;
 	isFFmpegLoaded: boolean;
 	hasVideoFile: boolean;
@@ -17,13 +23,24 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
 	(e: "update:speed", value: number): void;
 	(e: "update:contrast", value: number): void;
+	(e: "update:saturation", value: number): void;
+	(e: "update:temperature", value: number): void;
+	(e: "update:shadows", value: number): void;
+	(e: "update:highlights", value: number): void;
 	(e: "reset"): void;
 	(e: "export"): void;
 }>();
 
 // 计算属性：是否可以重置
 const canReset = computed(() => {
-	return !props.isProcessing && (props.speed !== 1.0 || props.contrast !== 1.0);
+	return !props.isProcessing && (
+		props.speed !== DEFAULT_FILTER_VALUES.speed ||
+		props.contrast !== DEFAULT_FILTER_VALUES.contrast ||
+		props.saturation !== DEFAULT_FILTER_VALUES.saturation ||
+		props.temperature !== DEFAULT_FILTER_VALUES.temperature ||
+		props.shadows !== DEFAULT_FILTER_VALUES.shadows ||
+		props.highlights !== DEFAULT_FILTER_VALUES.highlights
+	);
 });
 
 // 计算属性：是否可以导出
@@ -31,16 +48,10 @@ const canExport = computed(() => {
 	return !props.isProcessing && props.isFFmpegLoaded && props.hasVideoFile;
 });
 
-// 处理倍速变化
-const handleSpeedChange = (event: Event) => {
+// 通用处理函数
+const handleChange = (key: keyof VideoFilterOptions, event: Event) => {
 	const target = event.target as HTMLInputElement;
-	emit("update:speed", Number(target.value));
-};
-
-// 处理对比度变化
-const handleContrastChange = (event: Event) => {
-	const target = event.target as HTMLInputElement;
-	emit("update:contrast", Number(target.value));
+	emit(`update:${key}` as keyof typeof emit, Number(target.value));
 };
 
 // 重置效果
@@ -66,8 +77,8 @@ const handleExport = () => {
 				<span class="effect-value">{{ speed.toFixed(2) }}x</span>
 			</label>
 			<div class="effect-controls">
-				<input type="range" min="0.25" max="4" step="0.25" :value="speed" @input="handleSpeedChange"
-					class="effect-slider" :disabled="isProcessing" />
+				<input type="range" min="0.25" max="4" step="0.25" :value="speed"
+					@input="handleChange('speed', $event)" class="effect-slider" :disabled="isProcessing" />
 			</div>
 		</div>
 
@@ -78,8 +89,56 @@ const handleExport = () => {
 				<span class="effect-value">{{ contrast.toFixed(2) }}</span>
 			</label>
 			<div class="effect-controls">
-				<input type="range" min="0.5" max="2.0" step="0.05" :value="contrast" @input="handleContrastChange"
-					class="effect-slider" :disabled="isProcessing" />
+				<input type="range" min="0.5" max="2.0" step="0.05" :value="contrast"
+					@input="handleChange('contrast', $event)" class="effect-slider" :disabled="isProcessing" />
+			</div>
+		</div>
+
+		<!-- 饱和度控制 -->
+		<div class="effect-control-item">
+			<label class="effect-label">
+				<span>💧 饱和度</span>
+				<span class="effect-value">{{ saturation.toFixed(2) }}</span>
+			</label>
+			<div class="effect-controls">
+				<input type="range" min="0" max="3" step="0.1" :value="saturation"
+					@input="handleChange('saturation', $event)" class="effect-slider" :disabled="isProcessing" />
+			</div>
+		</div>
+
+		<!-- 色温控制 -->
+		<div class="effect-control-item">
+			<label class="effect-label">
+				<span>🌡️ 色温</span>
+				<span class="effect-value">{{ temperature >= 0 ? '+' : '' }}{{ temperature.toFixed(2) }}</span>
+			</label>
+			<div class="effect-controls">
+				<input type="range" min="-1" max="1" step="0.05" :value="temperature"
+					@input="handleChange('temperature', $event)" class="effect-slider" :disabled="isProcessing" />
+			</div>
+		</div>
+
+		<!-- 阴影控制 -->
+		<div class="effect-control-item">
+			<label class="effect-label">
+				<span>🌑 阴影</span>
+				<span class="effect-value">{{ shadows.toFixed(2) }}</span>
+			</label>
+			<div class="effect-controls">
+				<input type="range" min="0" max="2" step="0.05" :value="shadows"
+					@input="handleChange('shadows', $event)" class="effect-slider" :disabled="isProcessing" />
+			</div>
+		</div>
+
+		<!-- 高光控制 -->
+		<div class="effect-control-item">
+			<label class="effect-label">
+				<span>☀️ 高光</span>
+				<span class="effect-value">{{ highlights.toFixed(2) }}</span>
+			</label>
+			<div class="effect-controls">
+				<input type="range" min="0" max="2" step="0.05" :value="highlights"
+					@input="handleChange('highlights', $event)" class="effect-slider" :disabled="isProcessing" />
 			</div>
 		</div>
 
@@ -110,6 +169,8 @@ const handleExport = () => {
 	border-radius: 12px;
 	padding: 20px;
 	backdrop-filter: blur(10px);
+	max-height: calc(100vh - 200px);
+	overflow-y: auto;
 }
 
 .panel-title {
@@ -126,21 +187,21 @@ const handleExport = () => {
 }
 
 .effect-control-item {
-	margin-bottom: 24px;
+	margin-bottom: 18px;
 }
 
 .effect-label {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	margin-bottom: 12px;
-	font-size: 15px;
+	margin-bottom: 8px;
+	font-size: 14px;
 	font-weight: 600;
 }
 
 .effect-value {
 	color: #ffd700;
-	font-size: 16px;
+	font-size: 14px;
 	font-weight: bold;
 }
 
@@ -152,8 +213,8 @@ const handleExport = () => {
 
 .effect-slider {
 	width: 100%;
-	height: 8px;
-	border-radius: 4px;
+	height: 6px;
+	border-radius: 3px;
 	background: rgba(255, 255, 255, 0.2);
 	outline: none;
 	-webkit-appearance: none;
@@ -174,8 +235,8 @@ const handleExport = () => {
 .effect-slider::-webkit-slider-thumb {
 	-webkit-appearance: none;
 	appearance: none;
-	width: 20px;
-	height: 20px;
+	width: 16px;
+	height: 16px;
 	border-radius: 50%;
 	background: #667eea;
 	cursor: pointer;
@@ -189,8 +250,8 @@ const handleExport = () => {
 }
 
 .effect-slider::-moz-range-thumb {
-	width: 20px;
-	height: 20px;
+	width: 16px;
+	height: 16px;
 	border-radius: 50%;
 	background: #667eea;
 	cursor: pointer;
@@ -284,4 +345,3 @@ const handleExport = () => {
 	opacity: 0.9;
 }
 </style>
-

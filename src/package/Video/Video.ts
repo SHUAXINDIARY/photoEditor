@@ -1,5 +1,6 @@
 import { FFmpegWrapper } from "./ffmpeg";
 import { WebAVWrapper } from "./webav";
+import type { VideoFilterOptions } from "./types";
 
 /**
  * 视频处理模式
@@ -15,7 +16,7 @@ interface VideoWrapper {
   setProgressCallback(callback: ((progress: number) => void) | null): void;
   changeSpeed(inputFile: File, speed: number): Promise<Blob>;
   changeContrast(inputFile: File, contrast: number): Promise<Blob>;
-  applyFilters(inputFile: File, options: { speed?: number; contrast?: number }): Promise<Blob>;
+  applyFilters(inputFile: File, options: VideoFilterOptions): Promise<Blob>;
   destroy(): Promise<void>;
 }
 
@@ -228,17 +229,15 @@ export class VideoEditor {
   }
 
   /**
-   * 应用多个视频滤镜（倍速和对比度可以叠加）
+   * 应用多个视频滤镜
    * @param inputFile 输入视频文件
-   * @param options 滤镜选项
-   * @param options.speed 倍速值（可选，默认 1.0）
-   * @param options.contrast 对比度值（可选，默认 1.0）
+   * @param options 滤镜选项（倍速、对比度、饱和度、色温、阴影、高光）
    * @param onProgress 进度回调函数 (0-100)
    * @returns 处理后的视频 Blob
    */
   async applyFilters(
     inputFile: File,
-    options: { speed?: number; contrast?: number } = {},
+    options: VideoFilterOptions = {},
     onProgress?: (progress: number) => void
   ): Promise<Blob> {
     // 设置进度回调
