@@ -10,9 +10,12 @@ interface Props {
   videoUrl: string;
   videoElement: HTMLVideoElement | null;
   videoFile?: File | null; // 新增：视频文件对象
+  speed?: number; // 播放倍速，默认 1.0
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  speed: 1.0,
+});
 
 // 缩略图类型
 interface Thumbnail {
@@ -22,8 +25,8 @@ interface Thumbnail {
 
 // 状态
 const isPlaying = ref(false);
-const currentTime = ref(0);
-const duration = ref(0);
+const videoCurrentTime = ref(0); // 视频实际播放时间（原始时间）
+const originalDuration = ref(0); // 原始视频时长
 const isDragging = ref(false);
 const scale = ref(10); // 缩放级别（像素/秒）
 
@@ -32,15 +35,25 @@ const thumbnails = ref<Thumbnail[]>([]);
 const isLoadingThumbnails = ref(false);
 const lastLoadedFileId = ref<string | null>(null); // 用于判断文件是否变化
 
+// 根据倍速计算的有效播放时长（时间轴显示的总时长）
+const duration = computed(() => {
+  return originalDuration.value / props.speed;
+});
+
+// 时间轴上显示的当前时间（= 实际时间 / 倍速）
+const displayCurrentTime = computed(() => {
+  return videoCurrentTime.value / props.speed;
+});
+
 // 时间轴总宽度
 const timelineWidth = computed(() => {
   const minDuration = Math.max(duration.value, 60);
   return minDuration * scale.value;
 });
 
-// 播放头位置（像素）
+// 播放头位置（像素）- 基于时间轴显示时间
 const playheadPosition = computed(() => {
-  return currentTime.value * scale.value;
+  return displayCurrentTime.value * scale.value;
 });
 
 // 生成时间刻度（每10秒一个主刻度）
@@ -182,9 +195,9 @@ const setupVideoListeners = (video: HTMLVideoElement) => {
 
   // 初始化状态
   if (video.duration) {
-    duration.value = video.duration;
+    originalDuration.value = video.duration;
   }
-  currentTime.value = video.currentTime;
+  videoCurrentTime.value = video.currentTime;
 };
 
 // 移除视频监听器
@@ -199,13 +212,13 @@ const removeVideoListeners = (video: HTMLVideoElement) => {
 // 事件处理
 const handleTimeUpdate = () => {
   if (!isDragging.value && props.videoElement) {
-    currentTime.value = props.videoElement.currentTime;
+    videoCurrentTime.value = props.videoElement.currentTime;
   }
 };
 
 const handleLoadedMetadata = () => {
   if (props.videoElement) {
-    duration.value = props.videoElement.duration;
+    originalDuration.value = props.videoElement.duration;
   }
 };
 
@@ -219,7 +232,7 @@ const handlePause = () => {
 
 const handleEnded = () => {
   isPlaying.value = false;
-  currentTime.value = 0;
+  videoCurrentTime.value = 0;
 };
 
 // 播放/暂停控制
@@ -242,10 +255,13 @@ const handleTimelineClick = (event: MouseEvent) => {
   const rect = timelineContentRef.value.getBoundingClientRect();
   const scrollLeft = timelineContentRef.value.scrollLeft;
   const clickX = event.clientX - rect.left + scrollLeft;
-  const newTime = Math.min(pixelToTime(clickX), duration.value);
+  // 时间轴上的时间（显示时间）
+  const displayTime = Math.min(pixelToTime(clickX), duration.value);
+  // 转换为视频实际时间（显示时间 * 倍速 = 实际时间）
+  const videoTime = displayTime * props.speed;
 
-  props.videoElement.currentTime = newTime;
-  currentTime.value = newTime;
+  props.videoElement.currentTime = videoTime;
+  videoCurrentTime.value = videoTime;
 };
 
 const handleTimelineDragStart = (event: MouseEvent) => {
@@ -259,10 +275,13 @@ const handleTimelineDrag = (event: MouseEvent) => {
   const rect = timelineContentRef.value.getBoundingClientRect();
   const scrollLeft = timelineContentRef.value.scrollLeft;
   const dragX = event.clientX - rect.left + scrollLeft;
-  const newTime = Math.max(0, Math.min(pixelToTime(dragX), duration.value));
+  // 时间轴上的时间（显示时间）
+  const displayTime = Math.max(0, Math.min(pixelToTime(dragX), duration.value));
+  // 转换为视频实际时间（显示时间 * 倍速 = 实际时间）
+  const videoTime = displayTime * props.speed;
 
-  currentTime.value = newTime;
-  props.videoElement.currentTime = newTime;
+  videoCurrentTime.value = videoTime;
+  props.videoElement.currentTime = videoTime;
 };
 
 const handleTimelineDragEnd = () => {
@@ -324,7 +343,7 @@ onBeforeUnmount(() => {
         </button>
         <!-- 时间显示 -->
         <div class="time-display">
-          <span class="current-time">{{ formatDetailTime(currentTime) }}</span>
+          <span class="current-time">{{ formatDetailTime(displayCurrentTime) }}</span>
           <span class="time-separator">|</span>
           <span class="total-time">{{ formatDetailTime(duration) }}</span>
         </div>

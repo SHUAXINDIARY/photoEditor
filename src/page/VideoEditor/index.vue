@@ -425,7 +425,7 @@ const resetEffects = () => {
 					</div>
 
 					<!-- 时间轴组件 -->
-					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" :videoFile="originalVideoFile" />
+					<TimeLine :videoUrl="videoUrl" :videoElement="videoElement" :videoFile="originalVideoFile" :speed="speed" />
 				</div>
 			</div>
 
