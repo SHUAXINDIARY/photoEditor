@@ -90,40 +90,6 @@ const timeToPixel = (time: number): number => {
   return time * scale.value;
 };
 
-// 监听视频元素变化
-watch(
-  () => props.videoElement,
-  (newVideo, oldVideo) => {
-    if (oldVideo) {
-      removeVideoListeners(oldVideo);
-    }
-    if (newVideo) {
-      setupVideoListeners(newVideo);
-    }
-  },
-  { immediate: true }
-);
-
-// 监听视频文件变化，加载缩略图
-watch(
-  () => props.videoFile,
-  async (newFile) => {
-    if (newFile) {
-      // 生成文件唯一标识（文件名 + 大小 + 最后修改时间）
-      const fileId = `${newFile.name}-${newFile.size}-${newFile.lastModified}`;
-      if (fileId !== lastLoadedFileId.value) {
-        lastLoadedFileId.value = fileId;
-        await loadThumbnailsFromFile(newFile);
-      }
-    } else {
-      // 文件被清除，清理缩略图
-      cleanupThumbnails();
-      lastLoadedFileId.value = null;
-    }
-  },
-  { immediate: true }
-);
-
 // 从 File 对象加载缩略图
 const loadThumbnailsFromFile = async (file: File) => {
   if (!file || isLoadingThumbnails.value) return;
@@ -173,6 +139,42 @@ const cleanupThumbnails = () => {
   });
   thumbnails.value = [];
 };
+
+// 监听视频元素变化
+watch(
+  () => props.videoElement,
+  (newVideo, oldVideo) => {
+    if (oldVideo) {
+      removeVideoListeners(oldVideo);
+    }
+    if (newVideo) {
+      setupVideoListeners(newVideo);
+    }
+  },
+  { immediate: true }
+);
+
+// 监听视频文件变化，加载缩略图
+watch(
+  () => props.videoFile,
+  async (newFile) => {
+    console.log("[TimeLine] videoFile 变化:", newFile ? newFile.name : "null");
+    if (newFile) {
+      // 生成文件唯一标识（文件名 + 大小 + 最后修改时间）
+      const fileId = `${newFile.name}-${newFile.size}-${newFile.lastModified}`;
+      console.log("[TimeLine] 文件ID:", fileId, "上次ID:", lastLoadedFileId.value);
+      if (fileId !== lastLoadedFileId.value) {
+        lastLoadedFileId.value = fileId;
+        await loadThumbnailsFromFile(newFile);
+      }
+    } else {
+      // 文件被清除，清理缩略图
+      cleanupThumbnails();
+      lastLoadedFileId.value = null;
+    }
+  },
+  { immediate: true, deep: true }
+);
 
 // 设置视频监听器
 const setupVideoListeners = (video: HTMLVideoElement) => {
