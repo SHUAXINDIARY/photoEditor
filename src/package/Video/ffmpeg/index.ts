@@ -521,17 +521,73 @@ export class FFmpegWrapper {
       console.log("[FFmpeg] 效果参数:", { speed, contrast, saturation, temperature, shadows, highlights });
       console.log("[FFmpeg] 滤镜链:", filters.join(","));
       
+      // 启动假进度效果
+      // FFmpeg.wasm 的 progress 事件可能不会频繁触发，所以我们模拟一个平滑的进度
+      let fakeProgress = 0;
+      let realProgressReceived = false;
+      const progressCallback = this.currentProgressCallback;
+      
+      const fakeProgressInterval = setInterval(() => {
+        if (realProgressReceived) {
+          // 如果收到了真实进度，停止假进度
+          return;
+        }
+        
+        // 假进度：快速增长到 30%，然后缓慢增长到 85%
+        if (fakeProgress < 30) {
+          fakeProgress += 2;
+        } else if (fakeProgress < 60) {
+          fakeProgress += 1;
+        } else if (fakeProgress < 85) {
+          fakeProgress += 0.5;
+        }
+        // 最多到 85%，剩余 15% 留给真实完成
+        fakeProgress = Math.min(fakeProgress, 85);
+        
+        if (progressCallback) {
+          progressCallback(fakeProgress);
+        }
+      }, 200);
+      
+      // 监听真实进度
+      const originalCallback = this.currentProgressCallback;
+      this.currentProgressCallback = (progress: number) => {
+        if (progress > 0) {
+          realProgressReceived = true;
+          // 真实进度至少要比假进度大才更新
+          const effectiveProgress = Math.max(fakeProgress, progress);
+          if (originalCallback) {
+            originalCallback(effectiveProgress);
+          }
+        }
+      };
+      
       try {
         await this.ffmpeg.exec(ffmpegArgs);
       } catch (execError) {
         console.error("[FFmpeg] exec 执行失败:", execError);
         throw execError;
+      } finally {
+        // 清理假进度定时器
+        clearInterval(fakeProgressInterval);
+        // 恢复原始回调
+        this.currentProgressCallback = originalCallback;
+      }
+      
+      // 设置进度为 90%（读取文件阶段）
+      if (progressCallback) {
+        progressCallback(90);
       }
 
       // 读取输出文件
       console.log("[FFmpeg] 读取输出文件:", outputFileName);
       const data = (await this.ffmpeg.readFile(outputFileName)) as Uint8Array;
       console.log("[FFmpeg] 输出文件读取成功，大小:", data.length);
+      
+      // 设置进度为 95%（转换阶段）
+      if (progressCallback) {
+        progressCallback(95);
+      }
 
       // 转换为 Blob
       const arrayBuffer = new ArrayBuffer(data.length);
@@ -549,6 +605,11 @@ export class FFmpegWrapper {
         await this.ffmpeg.deleteFile(outputFileName);
       } catch (cleanupError) {
         console.warn("[FFmpeg] 清理输出文件失败:", cleanupError);
+      }
+      
+      // 设置进度为 100%
+      if (progressCallback) {
+        progressCallback(100);
       }
 
       return resultBlob;
