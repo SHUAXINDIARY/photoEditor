@@ -105,7 +105,9 @@ const loadThumbnailsFromFile = async (file: File) => {
 
     console.log("[TimeLine] MP4Clip ready, 开始获取缩略图...");
 
-    const imgList = await clip.thumbnails();
+    const imgList = await clip.thumbnails(100, {
+      step: 100
+    });
     console.log("[TimeLine] 获取到缩略图数量:", imgList.length);
 
     // 转换为 Blob URL
@@ -337,14 +339,8 @@ onBeforeUnmount(() => {
               <path d="M21 21l-4.35-4.35M8 11h6" />
             </svg>
           </button>
-          <input 
-            type="range" 
-            class="zoom-slider" 
-            :value="scale" 
-            @input="scale = Number(($event.target as HTMLInputElement).value)"
-            min="2" 
-            max="50" 
-          />
+          <input type="range" class="zoom-slider" :value="scale"
+            @input="scale = Number(($event.target as HTMLInputElement).value)" min="2" max="50" />
           <button class="zoom-btn" @click="zoomIn" title="放大">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8" />
@@ -370,20 +366,12 @@ onBeforeUnmount(() => {
     <!-- 时间轴主体 -->
     <div class="timeline-body">
       <!-- 时间轴内容 -->
-      <div
-        ref="timelineContentRef"
-        class="timeline-content"
-        @click="handleTimelineClick"
-        @mousedown="handleTimelineDragStart"
-      >
+      <div ref="timelineContentRef" class="timeline-content" @click="handleTimelineClick"
+        @mousedown="handleTimelineDragStart">
         <!-- 时间刻度尺 -->
         <div class="time-ruler" :style="{ width: `${timelineWidth}px` }">
-          <div
-            v-for="marker in timeMarkers"
-            :key="marker.time"
-            class="time-marker"
-            :style="{ left: `${timeToPixel(marker.time)}px` }"
-          >
+          <div v-for="marker in timeMarkers" :key="marker.time" class="time-marker"
+            :style="{ left: `${timeToPixel(marker.time)}px` }">
             <span class="marker-label">{{ marker.label }}</span>
             <div class="marker-line"></div>
           </div>
@@ -393,14 +381,10 @@ onBeforeUnmount(() => {
         <div class="tracks-area" :style="{ width: `${timelineWidth}px` }">
           <!-- 视频轨道 -->
           <div class="track video-track">
-            <div
-              v-if="duration > 0"
-              class="clip video-clip"
-              :style="{
-                left: '0px',
-                width: `${timeToPixel(duration)}px`,
-              }"
-            >
+            <div v-if="duration > 0" class="clip video-clip" :style="{
+              left: '0px',
+              width: `${timeToPixel(duration)}px`,
+            }">
               <!-- 视频缩略图 -->
               <div class="clip-thumbnails">
                 <!-- 加载中状态 -->
@@ -409,21 +393,12 @@ onBeforeUnmount(() => {
                 </div>
                 <!-- 真实缩略图 -->
                 <template v-else-if="thumbnails.length > 0">
-                  <img
-                    v-for="thumb in thumbnails"
-                    :key="thumb.ts"
-                    :src="thumb.img"
-                    class="thumbnail-img"
-                    :alt="`${(thumb.ts / 1e6).toFixed(1)}s`"
-                  />
+                  <img v-for="thumb in thumbnails" :key="thumb.ts" :src="thumb.img" class="thumbnail-img"
+                    :alt="`${(thumb.ts / 1e6).toFixed(1)}s`" />
                 </template>
                 <!-- 占位符（无缩略图时） -->
                 <template v-else>
-                  <div 
-                    v-for="i in Math.max(1, Math.ceil(duration / 5))" 
-                    :key="i" 
-                    class="thumbnail-placeholder"
-                  ></div>
+                  <div v-for="i in Math.max(1, Math.ceil(duration / 5))" :key="i" class="thumbnail-placeholder"></div>
                 </template>
               </div>
             </div>
@@ -833,13 +808,11 @@ onBeforeUnmount(() => {
 .audio-waveform {
   flex: 1;
   height: 24px;
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.3) 0px,
-    rgba(255, 255, 255, 0.3) 2px,
-    transparent 2px,
-    transparent 4px
-  );
+  background: repeating-linear-gradient(90deg,
+      rgba(255, 255, 255, 0.3) 0px,
+      rgba(255, 255, 255, 0.3) 2px,
+      transparent 2px,
+      transparent 4px);
   border-radius: 2px;
   position: relative;
 }
@@ -848,20 +821,18 @@ onBeforeUnmount(() => {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.2) 10%,
-    rgba(255, 255, 255, 0.4) 20%,
-    rgba(255, 255, 255, 0.2) 30%,
-    rgba(255, 255, 255, 0.5) 40%,
-    rgba(255, 255, 255, 0.3) 50%,
-    rgba(255, 255, 255, 0.4) 60%,
-    rgba(255, 255, 255, 0.2) 70%,
-    rgba(255, 255, 255, 0.5) 80%,
-    rgba(255, 255, 255, 0.3) 90%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.2) 10%,
+      rgba(255, 255, 255, 0.4) 20%,
+      rgba(255, 255, 255, 0.2) 30%,
+      rgba(255, 255, 255, 0.5) 40%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(255, 255, 255, 0.4) 60%,
+      rgba(255, 255, 255, 0.2) 70%,
+      rgba(255, 255, 255, 0.5) 80%,
+      rgba(255, 255, 255, 0.3) 90%,
+      transparent 100%);
 }
 
 /* 播放头 */

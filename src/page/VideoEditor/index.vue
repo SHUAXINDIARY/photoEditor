@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount, nextTick } from "vue";
+import { ref, onBeforeUnmount, watch } from "vue";
 import { useRouter } from "vue-router";
 import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video";
 import TimeLine from "../../components/TimeLine/TimeLine.vue";
@@ -13,8 +13,6 @@ const videoEditor = ref<VideoEditor | null>(null);
 const videoElement = ref<HTMLVideoElement | null>(null); // 视频 DOM 元素
 const speed = ref<number>(1.0); // 倍速值，默认 1.0
 const contrast = ref<number>(1.0); // 对比度值，默认 1.0
-const appliedSpeed = ref<number>(1.0); // 已应用的倍速值
-const appliedContrast = ref<number>(1.0); // 已应用的对比度值
 const isProcessing = ref<boolean>(false);
 const processingProgress = ref<number>(0);
 const isFFmpegLoaded = ref<boolean>(false);
@@ -22,6 +20,13 @@ const isFFmpegLoading = ref<boolean>(false);
 const ffmpegLoadProgress = ref<number>(0);
 const ffmpegLoadError = ref<string>("");
 const processingMode = ref<VideoProcessingMode | null>(null); // 处理模式，初始为 null，用户选择后才设置
+
+// 实时预览：监听倍速变化，直接修改视频播放速度
+watch(speed, (newSpeed) => {
+	if (videoElement.value) {
+		videoElement.value.playbackRate = newSpeed;
+	}
+});
 
 // 初始化 VideoEditor
 const initFFmpeg = async (mode: VideoProcessingMode) => {
@@ -112,8 +117,6 @@ const handleVideoUpload = (event: Event) => {
 	originalVideoFile.value = file; // 保存原始文件
 	speed.value = 1.0; // 重置倍速
 	contrast.value = 1.0; // 重置对比度
-	appliedSpeed.value = 1.0; // 重置已应用的倍速
-	appliedContrast.value = 1.0; // 重置已应用的对比度
 	processingProgress.value = 0;
 
 	// 创建视频 URL 用于预览
@@ -132,8 +135,6 @@ const clearVideo = () => {
 	originalVideoFile.value = null;
 	speed.value = 1.0;
 	contrast.value = 1.0;
-	appliedSpeed.value = 1.0;
-	appliedContrast.value = 1.0;
 	processingProgress.value = 0;
 	// 重置文件输入
 	const fileInput = document.getElementById("video-input") as HTMLInputElement;
@@ -142,9 +143,9 @@ const clearVideo = () => {
 	}
 };
 
-// 应用倍速处理（会同时应用对比度，保留已应用的对比度）
-const applySpeed = async () => {
-	console.time("倍速测试")
+// 导出视频（应用当前的倍速和对比度设置）
+const exportVideo = async () => {
+	console.time("视频导出")
 	if (!videoEditor.value || !originalVideoFile.value) {
 		toastWarning("请先上传视频文件");
 		return;
@@ -155,125 +156,16 @@ const applySpeed = async () => {
 		return;
 	}
 
-	if (speed.value <= 0) {
-		toastError("倍速值必须大于 0");
-		return;
-	}
-
-	// 确定要应用的倍速和对比度值
-	// 倍速使用当前滑块值，对比度保留已应用的值
 	const speedToApply = speed.value;
-	const contrastToApply = appliedContrast.value;
-
-	// 如果倍速和对比度都是默认值，恢复原始视频
-	if (speedToApply === 1.0 && contrastToApply === 1.0) {
-		const reader = new FileReader();
-		reader.onload = (e) => {
-			const result = e.target?.result as string;
-			videoUrl.value = result;
-		};
-		reader.readAsDataURL(originalVideoFile.value);
-		videoFile.value = originalVideoFile.value;
-		appliedSpeed.value = 1.0;
-		appliedContrast.value = 1.0;
-		return;
-	}
-
-	try {
-		isProcessing.value = true;
-		processingProgress.value = 0;
-
-		// 使用 applyFilters 同时应用倍速和对比度
-		const outputBlob = await videoEditor.value.applyFilters(
-			originalVideoFile.value,
-			{
-				speed: speedToApply,
-				contrast: contrastToApply,
-			},
-			(progress) => {
-				processingProgress.value = progress;
-			}
-		);
-
-		// 创建新的视频 URL
-		const newVideoUrl = URL.createObjectURL(outputBlob);
-
-		// 释放旧的 Object URL（如果存在且是 blob URL）
-		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
-			URL.revokeObjectURL(videoUrl.value);
-		}
-
-		videoUrl.value = newVideoUrl;
-
-		// 等待 DOM 更新后再强制视频元素重新加载
-		await nextTick();
-		if (videoElement.value) {
-			// 重新设置 src 并加载
-			videoElement.value.src = newVideoUrl;
-			videoElement.value.load();
-		}
-
-		// 更新 videoFile 为处理后的文件
-		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
-		const newFile = new File(
-			[outputBlob],
-			`${fileName}_speed${speedToApply}_contrast${contrastToApply.toFixed(2)}.mp4`,
-			{ type: "video/mp4" }
-		);
-		videoFile.value = newFile;
-
-		// 更新已应用的值
-		appliedSpeed.value = speedToApply;
-		appliedContrast.value = contrastToApply;
-
-		const effects = [];
-		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
-		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
-		toastSuccess(`视频已成功应用：${effects.join(" + ")}！`);
-	} catch (error) {
-		console.error("视频处理失败:", error);
-		toastError(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
-	} finally {
-		isProcessing.value = false;
-		processingProgress.value = 0;
-	}
-	console.timeEnd("倍速测试")
-};
-
-// 应用对比度处理（会同时应用倍速，保留已应用的倍速）
-const applyContrast = async () => {
-	console.time("对比度测速")
-	if (!videoEditor.value || !originalVideoFile.value) {
-		toastWarning("请先上传视频文件");
-		return;
-	}
-
-	if (!isFFmpegLoaded.value) {
-		toastWarning(`${processingMode.value === 'ffmpeg' ? 'FFmpeg' : 'WebAV'} 正在加载中，请稍候...`);
-		return;
-	}
-
-	if (contrast.value <= 0) {
-		toastError("对比度值必须大于 0");
-		return;
-	}
-
-	// 确定要应用的倍速和对比度值
-	// 对比度使用当前滑块值，倍速保留已应用的值
-	const speedToApply = appliedSpeed.value;
 	const contrastToApply = contrast.value;
 
-	// 如果倍速和对比度都是默认值，恢复原始视频
+	// 如果倍速和对比度都是默认值，直接下载原始视频
 	if (speedToApply === 1.0 && contrastToApply === 1.0) {
-		const reader = new FileReader();
-		reader.onload = (e) => {
-			const result = e.target?.result as string;
-			videoUrl.value = result;
-		};
-		reader.readAsDataURL(originalVideoFile.value);
-		videoFile.value = originalVideoFile.value;
-		appliedSpeed.value = 1.0;
-		appliedContrast.value = 1.0;
+		const link = document.createElement("a");
+		link.href = videoUrl.value;
+		link.download = originalVideoFile.value.name;
+		link.click();
+		toastSuccess("视频下载完成！");
 		return;
 	}
 
@@ -293,62 +185,44 @@ const applyContrast = async () => {
 			}
 		);
 
-		// 创建新的视频 URL
-		const newVideoUrl = URL.createObjectURL(outputBlob);
-
-		// 释放旧的 Object URL（如果存在且是 blob URL）
-		if (videoUrl.value && videoUrl.value.startsWith("blob:")) {
-			URL.revokeObjectURL(videoUrl.value);
-		}
-
-		videoUrl.value = newVideoUrl;
-
-		// 等待 DOM 更新后再强制视频元素重新加载
-		await nextTick();
-		if (videoElement.value) {
-			// 重新设置 src 并加载
-			videoElement.value.src = newVideoUrl;
-			videoElement.value.load();
-		}
-
-		// 更新 videoFile 为处理后的文件
+		// 创建下载链接
+		const downloadUrl = URL.createObjectURL(outputBlob);
 		const fileName = originalVideoFile.value.name.replace(/\.[^/.]+$/, "");
-		const newFile = new File(
-			[outputBlob],
-			`${fileName}_speed${speedToApply}_contrast${contrastToApply.toFixed(2)}.mp4`,
-			{ type: "video/mp4" }
-		);
-		videoFile.value = newFile;
-
-		// 更新已应用的值
-		appliedSpeed.value = speedToApply;
-		appliedContrast.value = contrastToApply;
-
 		const effects = [];
-		if (speedToApply !== 1.0) effects.push(`${speedToApply}x 倍速`);
-		if (contrastToApply !== 1.0) effects.push(`对比度 ${contrastToApply.toFixed(2)}`);
-		toastSuccess(`视频已成功应用：${effects.join(" + ")}！`);
+		if (speedToApply !== 1.0) effects.push(`speed${speedToApply}`);
+		if (contrastToApply !== 1.0) effects.push(`contrast${contrastToApply.toFixed(2)}`);
+		const newFileName = `${fileName}_${effects.join("_")}.mp4`;
+
+		const link = document.createElement("a");
+		link.href = downloadUrl;
+		link.download = newFileName;
+		link.click();
+
+		// 释放 URL
+		setTimeout(() => URL.revokeObjectURL(downloadUrl), 100);
+
+		const effectNames = [];
+		if (speedToApply !== 1.0) effectNames.push(`${speedToApply}x 倍速`);
+		if (contrastToApply !== 1.0) effectNames.push(`对比度 ${contrastToApply.toFixed(2)}`);
+		toastSuccess(`视频导出成功！已应用：${effectNames.join(" + ")}`);
 	} catch (error) {
-		console.error("视频处理失败:", error);
-		toastError(`视频处理失败: ${error instanceof Error ? error.message : String(error)}`);
+		console.error("视频导出失败:", error);
+		toastError(`视频导出失败: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
 		isProcessing.value = false;
 		processingProgress.value = 0;
 	}
-	console.timeEnd("对比度测速")
+	console.timeEnd("视频导出")
 };
 
-// 下载处理后的视频
-const downloadVideo = () => {
-	if (!videoFile.value) {
-		toastWarning("没有可下载的视频");
-		return;
+// 重置效果
+const resetEffects = () => {
+	speed.value = 1.0;
+	contrast.value = 1.0;
+	if (videoElement.value) {
+		videoElement.value.playbackRate = 1.0;
 	}
-
-	const link = document.createElement("a");
-	link.href = videoUrl.value;
-	link.download = videoFile.value.name;
-	link.click();
+	toastSuccess("效果已重置");
 };
 
 
@@ -463,69 +337,60 @@ const downloadVideo = () => {
 			<div v-if="videoUrl" class="video-preview-section">
 				<!-- 左侧控制面板 -->
 				<div class="left-panel">
-					<!-- 倍速控制面板 -->
-					<div class="speed-control-panel">
-						<div class="speed-control-item">
-							<label class="speed-label">
-								<span>倍速：</span>
-								<span class="speed-value">{{ speed.toFixed(2) }}x</span>
-							</label>
-							<div class="speed-controls">
-								<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed"
-									class="speed-slider" :disabled="isProcessing || !isFFmpegLoaded" />
-								<div class="speed-presets">
-									<button v-for="preset in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]" :key="preset"
-										@click="speed = preset" class="speed-preset-btn"
-										:class="{ active: speed === preset }"
-										:disabled="isProcessing || !isFFmpegLoaded">
-										{{ preset }}x
-									</button>
-								</div>
-							</div>
-						</div>
-						<div class="speed-actions">
-							<button @click="applySpeed" class="apply-button"
-								:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
-								{{ isProcessing ? "处理中..." : "应用倍速" }}
-							</button>
-							<button v-if="videoFile && speed !== 1.0" @click="downloadVideo" class="download-button"
-								:disabled="isProcessing">
-								下载视频
-							</button>
-						</div>
-						<!-- 处理进度 -->
-						<div v-if="isProcessing" class="progress-container">
-							<div class="progress-bar">
-								<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
-							</div>
-							<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
-						</div>
-					</div>
+					<!-- 效果控制面板 -->
+					<div class="effects-control-panel">
+						<h3 class="panel-title">效果调整</h3>
+						<p class="panel-hint">拖动滑块实时预览效果</p>
 
-					<!-- 对比度调整 -->
-					<div class="contrast-control-panel">
-						<div class="contrast-control-item">
-							<label class="contrast-label">
-								<span>对比度：</span>
-								<span class="contrast-value">{{ contrast.toFixed(2) }}</span>
+						<!-- 倍速控制 -->
+						<div class="effect-control-item">
+							<label class="effect-label">
+								<span>🚀 倍速</span>
+								<span class="effect-value">{{ speed.toFixed(2) }}x</span>
 							</label>
-							<div class="contrast-controls">
-								<input type="range" min="0.5" max="2.0" step="0.1" v-model.number="contrast"
-									class="contrast-slider" :disabled="isProcessing || !isFFmpegLoaded" />
+							<div class="effect-controls">
+								<input type="range" min="0.25" max="4" step="0.25" v-model.number="speed"
+									class="effect-slider" :disabled="isProcessing" />
 							</div>
 						</div>
-						<div class="contrast-actions">
-							<button @click="applyContrast" class="apply-button"
+
+						<!-- 对比度控制 -->
+						<div class="effect-control-item">
+							<label class="effect-label">
+								<span>🎨 对比度</span>
+								<span class="effect-value">{{ contrast.toFixed(2) }}</span>
+							</label>
+							<div class="effect-controls">
+								<input type="range" min="0.5" max="2.0" step="0.05" v-model.number="contrast"
+									class="effect-slider" :disabled="isProcessing" />
+							</div>
+						</div>
+
+						<!-- 操作按钮 -->
+						<div class="effect-actions">
+							<button @click="resetEffects" class="reset-button"
+								:disabled="isProcessing || (speed === 1.0 && contrast === 1.0)">
+								🔄 重置
+							</button>
+							<button @click="exportVideo" class="export-button"
 								:disabled="isProcessing || !isFFmpegLoaded || !originalVideoFile">
-								{{ isProcessing ? "处理中..." : "应用对比度" }}
+								{{ isProcessing ? "导出中..." : "📥 导出视频" }}
 							</button>
 						</div>
+
 						<!-- 处理进度 -->
 						<div v-if="isProcessing" class="progress-container">
 							<div class="progress-bar">
 								<div class="progress-fill" :style="{ width: `${processingProgress}%` }"></div>
 							</div>
-							<p class="progress-text">{{ processingProgress.toFixed(1) }}%</p>
+							<p class="progress-text">正在导出... {{ processingProgress.toFixed(1) }}%</p>
+						</div>
+
+						<!-- 当前效果提示 -->
+						<div v-if="speed !== 1.0 || contrast !== 1.0" class="current-effects">
+							<span class="effects-label">当前效果：</span>
+							<span v-if="speed !== 1.0" class="effect-tag">{{ speed }}x 倍速</span>
+							<span v-if="contrast !== 1.0" class="effect-tag">对比度 {{ contrast.toFixed(2) }}</span>
 						</div>
 					</div>
 
@@ -553,7 +418,8 @@ const downloadVideo = () => {
 				<!-- 右侧视频区域 -->
 				<div class="right-panel">
 					<div class="video-wrapper">
-						<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview">
+						<video ref="videoElement" :src="videoUrl" :controls="false" class="video-preview"
+							:style="{ filter: `contrast(${contrast})` }">
 							您的浏览器不支持视频播放
 						</video>
 					</div>
@@ -824,39 +690,53 @@ const downloadVideo = () => {
 	opacity: 0.9;
 }
 
-.speed-control-panel {
+/* 效果控制面板样式 */
+.effects-control-panel {
 	background: rgba(255, 255, 255, 0.1);
 	border-radius: 12px;
 	padding: 20px;
 	backdrop-filter: blur(10px);
 }
 
-.speed-control-item {
+.panel-title {
+	font-size: 18px;
+	font-weight: 700;
+	margin-bottom: 4px;
+	color: white;
+}
+
+.panel-hint {
+	font-size: 13px;
+	opacity: 0.7;
 	margin-bottom: 20px;
 }
 
-.speed-label {
+.effect-control-item {
+	margin-bottom: 24px;
+}
+
+.effect-label {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
 	margin-bottom: 12px;
-	font-size: 16px;
+	font-size: 15px;
 	font-weight: 600;
 }
 
-.speed-value {
+.effect-value {
 	color: #ffd700;
-	font-size: 18px;
+	font-size: 16px;
 	font-weight: bold;
 }
 
-.speed-controls {
+.effect-controls {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
 }
 
-.speed-slider {
+.effect-slider {
 	width: 100%;
 	height: 8px;
 	border-radius: 4px;
@@ -868,16 +748,16 @@ const downloadVideo = () => {
 	transition: background 0.3s ease;
 }
 
-.speed-slider:hover:not(:disabled) {
+.effect-slider:hover:not(:disabled) {
 	background: rgba(255, 255, 255, 0.3);
 }
 
-.speed-slider:disabled {
+.effect-slider:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
 
-.speed-slider::-webkit-slider-thumb {
+.effect-slider::-webkit-slider-thumb {
 	-webkit-appearance: none;
 	appearance: none;
 	width: 20px;
@@ -889,12 +769,12 @@ const downloadVideo = () => {
 	transition: all 0.2s ease;
 }
 
-.speed-slider::-webkit-slider-thumb:hover:not(:disabled) {
+.effect-slider::-webkit-slider-thumb:hover:not(:disabled) {
 	background: #5568d3;
 	transform: scale(1.1);
 }
 
-.speed-slider::-moz-range-thumb {
+.effect-slider::-moz-range-thumb {
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
@@ -905,96 +785,122 @@ const downloadVideo = () => {
 	transition: all 0.2s ease;
 }
 
-.speed-slider::-moz-range-thumb:hover:not(:disabled) {
+.effect-slider::-moz-range-thumb:hover:not(:disabled) {
 	background: #5568d3;
 	transform: scale(1.1);
 }
 
-.speed-presets {
+.effect-presets {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 6px;
 }
 
-.speed-preset-btn {
-	padding: 6px 12px;
-	background: rgba(255, 255, 255, 0.2);
+.effect-preset-btn {
+	padding: 5px 10px;
+	background: rgba(255, 255, 255, 0.15);
 	color: white;
-	border: 1px solid rgba(255, 255, 255, 0.3);
+	border: 1px solid rgba(255, 255, 255, 0.25);
 	border-radius: 6px;
 	cursor: pointer;
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 500;
-	transition: all 0.3s ease;
+	transition: all 0.2s ease;
 }
 
-.speed-preset-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.3);
+.effect-preset-btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.25);
 	transform: translateY(-1px);
 }
 
-.speed-preset-btn.active {
+.effect-preset-btn.active {
 	background: #667eea;
 	border-color: #667eea;
 	font-weight: 600;
 }
 
-.speed-preset-btn:disabled {
+.effect-preset-btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
 
-.speed-actions {
+.effect-actions {
 	display: flex;
 	gap: 12px;
-	justify-content: center;
 	margin-top: 20px;
 }
 
-.apply-button,
-.download-button {
-	padding: 12px 24px;
+.reset-button,
+.export-button {
+	flex: 1;
+	padding: 12px 16px;
 	border: none;
 	border-radius: 8px;
 	cursor: pointer;
-	font-size: 16px;
+	font-size: 15px;
 	font-weight: 600;
 	transition: all 0.3s ease;
 	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.apply-button {
-	background: #4caf50;
+.reset-button {
+	background: rgba(255, 255, 255, 0.2);
+	color: white;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.reset-button:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.3);
+	transform: translateY(-2px);
+}
+
+.reset-button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.export-button {
+	background: linear-gradient(135deg, #4caf50, #45a049);
 	color: white;
 }
 
-.apply-button:hover:not(:disabled) {
-	background: #45a049;
+.export-button:hover:not(:disabled) {
+	background: linear-gradient(135deg, #45a049, #3d8b40);
 	transform: translateY(-2px);
 	box-shadow: 0 6px 12px rgba(76, 175, 80, 0.3);
 }
 
-.apply-button:disabled {
+.export-button:disabled {
 	background: rgba(255, 255, 255, 0.2);
 	color: rgba(255, 255, 255, 0.5);
 	cursor: not-allowed;
 	opacity: 0.6;
 }
 
-.download-button {
-	background: #2196f3;
-	color: white;
+.current-effects {
+	margin-top: 16px;
+	padding: 12px;
+	background: rgba(255, 215, 0, 0.1);
+	border-radius: 8px;
+	border: 1px solid rgba(255, 215, 0, 0.3);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
 }
 
-.download-button:hover:not(:disabled) {
-	background: #1976d2;
-	transform: translateY(-2px);
-	box-shadow: 0 6px 12px rgba(33, 150, 243, 0.3);
+.effects-label {
+	font-size: 13px;
+	opacity: 0.9;
 }
 
-.download-button:disabled {
-	opacity: 0.6;
-	cursor: not-allowed;
+.effect-tag {
+	padding: 4px 10px;
+	background: rgba(255, 215, 0, 0.2);
+	border-radius: 4px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #ffd700;
 }
 
 .progress-container {
@@ -1295,133 +1201,6 @@ const downloadVideo = () => {
 	}
 }
 
-/* 对比度控制面板样式 */
-.contrast-control-panel {
-	background: rgba(255, 255, 255, 0.1);
-	border-radius: 12px;
-	padding: 20px;
-	backdrop-filter: blur(10px);
-}
-
-.contrast-control-item {
-	margin-bottom: 20px;
-}
-
-.contrast-label {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	margin-bottom: 12px;
-	font-size: 16px;
-	font-weight: 600;
-}
-
-.contrast-value {
-	color: #ffd700;
-	font-size: 18px;
-	font-weight: bold;
-}
-
-.contrast-controls {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
-.contrast-slider {
-	width: 100%;
-	height: 8px;
-	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.2);
-	outline: none;
-	-webkit-appearance: none;
-	appearance: none;
-	cursor: pointer;
-	transition: background 0.3s ease;
-}
-
-.contrast-slider:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.3);
-}
-
-.contrast-slider:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.contrast-slider::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	appearance: none;
-	width: 20px;
-	height: 20px;
-	border-radius: 50%;
-	background: #667eea;
-	cursor: pointer;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-	transition: all 0.2s ease;
-}
-
-.contrast-slider::-webkit-slider-thumb:hover:not(:disabled) {
-	background: #5568d3;
-	transform: scale(1.1);
-}
-
-.contrast-slider::-moz-range-thumb {
-	width: 20px;
-	height: 20px;
-	border-radius: 50%;
-	background: #667eea;
-	cursor: pointer;
-	border: none;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-	transition: all 0.2s ease;
-}
-
-.contrast-slider::-moz-range-thumb:hover:not(:disabled) {
-	background: #5568d3;
-	transform: scale(1.1);
-}
-
-.contrast-presets {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-}
-
-.contrast-preset-btn {
-	padding: 6px 12px;
-	background: rgba(255, 255, 255, 0.2);
-	color: white;
-	border: 1px solid rgba(255, 255, 255, 0.3);
-	border-radius: 6px;
-	cursor: pointer;
-	font-size: 14px;
-	font-weight: 500;
-	transition: all 0.3s ease;
-}
-
-.contrast-preset-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.3);
-	transform: translateY(-1px);
-}
-
-.contrast-preset-btn.active {
-	background: #667eea;
-	border-color: #667eea;
-	font-weight: 600;
-}
-
-.contrast-preset-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.contrast-actions {
-	display: flex;
-	gap: 12px;
-	justify-content: center;
-	margin-top: 20px;
-}
 
 /* 模式选择界面样式 */
 .mode-selection-overlay {
