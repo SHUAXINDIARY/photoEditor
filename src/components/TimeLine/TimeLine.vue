@@ -32,12 +32,6 @@ const thumbnails = ref<Thumbnail[]>([]);
 const isLoadingThumbnails = ref(false);
 const lastLoadedFileId = ref<string | null>(null); // 用于判断文件是否变化
 
-// 时间轴进度（百分比）
-const progress = computed(() => {
-  if (duration.value === 0) return 0;
-  return (currentTime.value / duration.value) * 100;
-});
-
 // 时间轴总宽度
 const timelineWidth = computed(() => {
   const minDuration = Math.max(duration.value, 60);

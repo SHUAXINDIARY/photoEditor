@@ -768,7 +768,7 @@ const downloadVideo = () => {
 	width: 100%;
 	background: rgba(0, 0, 0, 0.3);
 	border-radius: 12px;
-	padding: 20px;
+	/* padding: 20px; */
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 	display: flex;
 	align-items: center;
