@@ -638,7 +638,8 @@ const resetEffects = () => {
 .video-preview {
 	width: 100%;
 	max-width: 100%;
-	max-height: 50vh;
+	max-height: 65vh;
+	min-height: 50vh;
 	height: auto;
 	border-radius: 8px;
 	background: #000;
@@ -789,7 +790,7 @@ const resetEffects = () => {
 	}
 
 	.video-preview {
-		max-height: 60vh;
+		max-height: 70vh;
 	}
 
 	.video-content {
@@ -820,7 +821,7 @@ const resetEffects = () => {
 	}
 
 	.video-preview {
-		max-height: 50vh;
+		max-height: 55vh;
 	}
 }
 

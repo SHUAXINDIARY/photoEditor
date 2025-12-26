@@ -3,6 +3,7 @@ import type { VideoFilterOptions } from "../types";
 import { DEFAULT_FILTER_VALUES } from "../types";
 import { WebGLFilterRenderer, type FilterParams, type IGPURenderer } from "./WebGLFilterRenderer";
 
+
 /**
  * WebAV 封装类，负责基于 WebCodecs 的视频处理实现
  * 提供与 FFmpegWrapper 相同的接口
@@ -22,7 +23,7 @@ export class WebAVWrapper {
   private isLoaded: boolean = false;
   private loadingProgress: number = 0;
   private currentProgressCallback: ((progress: number) => void) | null = null;
-
+  private videoCodec: string = "avc1.640033";
   constructor() {
     // WebAV 基于 WebCodecs，不需要预加载，但需要检查浏览器支持
     this.checkWebCodecsSupport();
@@ -126,7 +127,7 @@ export class WebAVWrapper {
       // 读取视频文件
       const videoBuffer = await inputFile.arrayBuffer();
       const videoData = new Uint8Array(videoBuffer);
-      
+
       // 创建用于读取源帧的 clip
       const sourceClip = new MP4Clip(new ReadableStream({
         start(controller) {
@@ -140,12 +141,12 @@ export class WebAVWrapper {
       const meta = sourceClip.meta;
       const originalDurationUs = meta.duration; // 微秒
       const newDurationUs = originalDurationUs / speed;
-      
+
       // 输出帧率和帧间隔
       const fps = 30;
       const frameIntervalUs = 1_000_000 / fps; // 每帧间隔（微秒）
       const totalOutputFrames = Math.ceil(newDurationUs / frameIntervalUs);
-      
+
       console.log("[WebAV] 视频信息:", {
         width: meta.width,
         height: meta.height,
@@ -168,19 +169,19 @@ export class WebAVWrapper {
       // 预先提取所有需要的帧的图像数据
       // 核心逻辑：对于输出的每一帧（outputTime），从源视频的 sourceTime = outputTime * speed 位置读取
       const frameImages: ImageData[] = [];
-      
+
       for (let i = 0; i < totalOutputFrames; i++) {
         const outputTimeUs = i * frameIntervalUs;
         const sourceTimeUs = Math.round(outputTimeUs * speed);
-        
+
         // 超出源视频时长则停止
         if (sourceTimeUs >= originalDurationUs) break;
 
         // 从源视频读取指定时间的帧（这是 demo 中的核心方法）
         const { state, video } = await sourceClip.tick(sourceTimeUs);
-        
+
         if (state === "done") break;
-        
+
         if (video != null && state === "success") {
           // 绘制到 canvas
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -223,21 +224,21 @@ export class WebAVWrapper {
           Math.floor(time / frameIntervalUs),
           frameImages.length - 1
         );
-        
+
         if (targetIndex >= 0 && targetIndex < frameImages.length && tickRet.video) {
           // 将预处理的帧数据绘制到 canvas
           ctx.putImageData(frameImages[targetIndex], 0, 0);
-          
+
           // 创建新的 VideoFrame，使用新的时间戳
           const newFrame = new VideoFrame(canvas, {
             timestamp: time,
             duration: frameIntervalUs,
           });
-          
+
           tickRet.video.close();
           tickRet.video = newFrame;
         }
-        
+
         return tickRet;
       };
 
@@ -250,6 +251,8 @@ export class WebAVWrapper {
       const combinator = new Combinator({
         width: meta.width,
         height: meta.height,
+        videoCodec: this.videoCodec
+        // codec: "avc1.42E033", // 👈 这里
       });
 
       await combinator.addSprite(sprite);
@@ -259,17 +262,17 @@ export class WebAVWrapper {
       const outputStream = combinator.output();
       const chunks: Uint8Array[] = [];
       const reader = outputStream.getReader();
-      
+
       let totalBytes = 0;
       const estimatedSize = Math.max(videoData.byteLength / speed, 100000);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         chunks.push(value);
         totalBytes += value.byteLength;
-        
+
         const progress = 70 + Math.min(25, (totalBytes / estimatedSize) * 25);
         this.updateProgress(progress);
       }
@@ -396,7 +399,7 @@ export class WebAVWrapper {
       // 读取视频文件
       const videoBuffer = await inputFile.arrayBuffer();
       const videoData = new Uint8Array(videoBuffer);
-      
+
       // 创建 MP4Clip
       const clip = new MP4Clip(new ReadableStream({
         start(controller) {
@@ -442,7 +445,7 @@ export class WebAVWrapper {
       } else {
         webglRenderer.destroy();
       }
-      
+
       // 创建 2D Canvas 用于 CPU 回退和 VideoFrame 创建
       const canvas = new OffscreenCanvas(width, height);
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -580,7 +583,7 @@ export class WebAVWrapper {
       sprite.time = { offset: 0, duration: newDurationUs };
 
       // 创建 Combinator 合成视频
-      const combinator = new Combinator({ width, height });
+      const combinator = new Combinator({ width, height, videoCodec: this.videoCodec });
       await combinator.addSprite(sprite);
       this.updateProgress(70);
 
@@ -588,17 +591,17 @@ export class WebAVWrapper {
       const outputStream = combinator.output();
       const chunks: Uint8Array[] = [];
       const reader = outputStream.getReader();
-      
+
       let totalBytes = 0;
       const estimatedSize = Math.max(videoData.byteLength / speed, 100000);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         chunks.push(value);
         totalBytes += value.byteLength;
-        
+
         const progress = 70 + Math.min(25, (totalBytes / estimatedSize) * 25);
         this.updateProgress(progress);
       }
