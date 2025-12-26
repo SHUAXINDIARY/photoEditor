@@ -152,6 +152,7 @@ src/
       Video.ts               # 视频编辑器核心类（抽象层，支持 FFmpeg 和 WebAV）
       types.ts               # 视频滤镜类型定义和默认值
       shaders.ts             # 统一的 WebGL 着色器代码（预览和导出共用）
+      filters.ts             # CPU 滤镜工具函数（GPU 回退方案）
       ffmpeg/
         index.ts             # FFmpeg 实现（FFmpegWrapper）
       webav/
@@ -164,7 +165,9 @@ src/
       index.vue              # 效果调节面板组件（配置驱动）
     VideoPreview/
       index.vue              # WebGL 视频预览组件
-      WebGLRenderer.ts       # WebGL 滤镜渲染器
+      WebGLRenderer.ts       # WebGL 滤镜渲染器（预览用）
+    ErrorOverlay/
+      index.vue              # 加载失败错误页面组件
   assets/
     zoom-in.svg              # 放大图标
     zoom-out.svg             # 缩小图标
@@ -257,6 +260,14 @@ src/
   - 隐藏原生 `<video>` 元素，在 `<canvas>` 上显示处理后的画面
   - 监听视频播放状态，使用 `requestAnimationFrame` 持续渲染
   - 滤镜参数变化时自动更新渲染
+
+- **`ErrorOverlay` 组件**（`components/ErrorOverlay/index.vue`）
+  - 通用的加载失败错误页面组件
+  - 支持 FFmpeg 和 WebAV 两种模式的错误展示
+  - 根据模式自动显示对应的可能原因列表
+  - 提供重新加载、重新选择模式、返回首页三个操作按钮
+  - Props：`mode`（处理模式）、`errorMessage`（错误信息）
+  - Events：`@retry`、`@back`、`@home`
 
 - **`FFmpegWrapper` 类**（`package/Video/ffmpeg/index.ts`）
   - 封装 FFmpeg.wasm 实例，管理加载状态
@@ -592,9 +603,10 @@ if (u_temperature > 0.0) {
 }
 ```
 
-- **CPU 回退**
+- **CPU 回退**（`filters.ts`）
   - 当 WebGL 不可用时，使用相同算法的 JavaScript 实现
-  - 直接操作 `ImageData` 像素数据
+  - `applyCPUFilters(pixelData, params)`：直接应用滤镜到像素数据
+  - `createCPUFilterProcessor(params)`：创建绑定参数的处理器（预计算 gamma，适合多次调用）
   - 确保与 WebGL 渲染结果一致
 
 ### 实时预览机制
@@ -656,7 +668,12 @@ if (u_temperature > 0.0) {
 
 ## 更新日志
 
-### v1.2.0 (最新)
+### v1.3.0 (最新)
+- **CPU 滤镜工具函数**：将 CPU 滤镜处理逻辑抽离到 `filters.ts`，提供 `applyCPUFilters` 和 `createCPUFilterProcessor` 两个工具函数
+- **ErrorOverlay 组件**：将加载失败页面拆分为独立组件，支持 FFmpeg 和 WebAV 两种模式的错误展示
+- **代码优化**：减少重复代码，提升可维护性
+
+### v1.2.0
 - **统一着色器架构**：将 WebGL 着色器代码抽离到 `shaders.ts`，预览和导出共享同一份代码
 - **代码重构**：`WebGLFilterRenderer` 拆分为独立文件，提升代码可维护性
 - **修复 TimeLine 组件**：解决切换模式后重新上传视频时的初始化顺序问题
