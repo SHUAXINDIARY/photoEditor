@@ -2,6 +2,7 @@ import { MP4Clip, Combinator, OffscreenSprite } from "@webav/av-cliper";
 import type { VideoFilterOptions } from "../types";
 import { DEFAULT_FILTER_VALUES } from "../types";
 import { WebGLFilterRenderer, type FilterParams, type IGPURenderer } from "./WebGLFilterRenderer";
+import { createCPUFilterProcessor } from "../filters";
 
 
 /**
@@ -456,66 +457,15 @@ export class WebAVWrapper {
       // 性能优化：预分配 ImageData 对象，避免每帧重复创建
       const reusableImageData = ctx.createImageData(width, height);
       const pixelData = reusableImageData.data;
-      const pixelCount = width * height * 4;
 
-      // CPU 滤镜处理函数（与 WebGL 着色器算法一致）
-      const applyFiltersCPU = () => {
-        // 预计算 gamma 值
-        const gamma = shadows !== 1.0 ? 1.0 / Math.pow(shadows, 0.6) : 1.0;
-
-        for (let i = 0; i < pixelCount; i += 4) {
-          let r = pixelData[i] / 255;
-          let g = pixelData[i + 1] / 255;
-          let b = pixelData[i + 2] / 255;
-
-          // 1. 对比度 (与 WebGL 一致)
-          r = (r - 0.5) * contrast + 0.5;
-          g = (g - 0.5) * contrast + 0.5;
-          b = (b - 0.5) * contrast + 0.5;
-
-          // 2. 饱和度 (与 WebGL 一致)
-          if (saturation !== 1.0) {
-            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-            r = gray + (r - gray) * saturation;
-            g = gray + (g - gray) * saturation;
-            b = gray + (b - gray) * saturation;
-          }
-
-          // 3. 阴影 - gamma 曲线 (与 WebGL 一致)
-          if (shadows !== 1.0) {
-            r = Math.pow(Math.max(0, r), gamma);
-            g = Math.pow(Math.max(0, g), gamma);
-            b = Math.pow(Math.max(0, b), gamma);
-          }
-
-          // 4. 高光 - brightness (与 WebGL 一致)
-          if (highlights !== 1.0) {
-            const brightness = (highlights - 1.0) * 0.3;
-            r = r + brightness;
-            g = g + brightness;
-            b = b + brightness;
-          }
-
-          // 5. 色温 (与 WebGL 一致)
-          if (temperature !== 0) {
-            if (temperature > 0) {
-              r = r + temperature * 0.15;
-              g = g + temperature * 0.05;
-              b = b - temperature * 0.15;
-            } else {
-              const cool = Math.abs(temperature);
-              r = r - cool * 0.1;
-              g = g - cool * 0.02;
-              b = b + cool * 0.15;
-            }
-          }
-
-          // 转回 0-255 并 clamp
-          pixelData[i] = Math.max(0, Math.min(255, r * 255));
-          pixelData[i + 1] = Math.max(0, Math.min(255, g * 255));
-          pixelData[i + 2] = Math.max(0, Math.min(255, b * 255));
-        }
-      };
+      // 创建 CPU 滤镜处理器（预计算参数，避免每帧重复计算）
+      const applyFiltersCPU = createCPUFilterProcessor({
+        contrast,
+        saturation,
+        temperature,
+        shadows,
+        highlights,
+      });
 
       console.log(`[WebAV] 使用 ${gpuType} 处理滤镜`);
 
@@ -544,7 +494,7 @@ export class WebAVWrapper {
               ctx.drawImage(video, 0, 0);
               const tempData = ctx.getImageData(0, 0, width, height);
               pixelData.set(tempData.data);
-              applyFiltersCPU();
+              applyFiltersCPU(pixelData);
               ctx.putImageData(reusableImageData, 0, 0);
             }
           } else {
@@ -552,7 +502,7 @@ export class WebAVWrapper {
             ctx.drawImage(video, 0, 0);
             const tempData = ctx.getImageData(0, 0, width, height);
             pixelData.set(tempData.data);
-            applyFiltersCPU();
+            applyFiltersCPU(pixelData);
             ctx.putImageData(reusableImageData, 0, 0);
           }
 
