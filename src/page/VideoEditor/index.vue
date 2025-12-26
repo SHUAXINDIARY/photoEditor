@@ -5,6 +5,7 @@ import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video
 import TimeLine from "../../components/TimeLine/TimeLine.vue";
 import EffectsPanel from "../../components/EffectsPanel/index.vue";
 import VideoPreview from "../../components/VideoPreview/index.vue";
+import ErrorOverlay from "../../components/ErrorOverlay/index.vue";
 import { toastWarning, toastError, toastSuccess } from "../../utils/toast";
 import { DEFAULT_FILTER_VALUES, isDefaultFilters, getActiveEffects, getEffectDescriptions } from "../../package/Video/types";
 
@@ -288,35 +289,14 @@ const resetEffects = () => {
 		</div>
 
 		<!-- 加载失败页面 -->
-		<div v-else-if="ffmpegLoadError && !isFFmpegLoaded && processingMode" class="error-overlay">
-			<div class="error-content">
-				<div class="error-icon">❌</div>
-				<h2 class="error-title">{{ processingMode === 'ffmpeg' ? 'FFmpeg' : 'WebAV' }} 加载失败</h2>
-				<p class="error-message">{{ ffmpegLoadError }}</p>
-				<div class="error-hints">
-					<p>可能的原因：</p>
-					<ul>
-						<li v-if="processingMode === 'ffmpeg'">网络连接不稳定</li>
-						<li v-if="processingMode === 'ffmpeg'">CDN 资源加载失败</li>
-						<li v-if="processingMode === 'ffmpeg'">浏览器不支持 WebAssembly</li>
-						<li v-if="processingMode === 'webav'">浏览器不支持 WebCodecs API</li>
-						<li v-if="processingMode === 'webav'">请使用 Chrome 94+ 或 Edge 94+ 浏览器</li>
-					</ul>
-				</div>
-				<div class="error-actions">
-					<button @click="selectMode(processingMode!)" class="retry-button">
-						🔄 重新加载
-					</button>
-					<button @click="processingMode = null; isFFmpegLoaded = false; ffmpegLoadError = ''"
-						class="back-button">
-						↩️ 重新选择模式
-					</button>
-					<button @click="goToHome" class="back-button">
-						🏠 返回首页
-					</button>
-				</div>
-			</div>
-		</div>
+		<ErrorOverlay
+			v-else-if="ffmpegLoadError && !isFFmpegLoaded && processingMode"
+			:mode="processingMode"
+			:error-message="ffmpegLoadError"
+			@retry="selectMode(processingMode!)"
+			@back="processingMode = null; isFFmpegLoaded = false; ffmpegLoadError = ''"
+			@home="goToHome"
+		/>
 
 		<!-- 主界面（仅在加载成功后显示） -->
 		<template v-else-if="isFFmpegLoaded && processingMode">
@@ -790,153 +770,6 @@ const resetEffects = () => {
 	opacity: 0.8;
 	color: white;
 	margin-top: 10px;
-}
-
-/* FFmpeg 加载失败页面样式 */
-.error-overlay {
-	position: fixed;
-	top: 60px;
-	/* 从导航栏下方开始 */
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: 999;
-	/* 低于导航栏的 z-index: 1000 */
-}
-
-.error-content {
-	text-align: center;
-	padding: 40px;
-	background: rgba(255, 255, 255, 0.1);
-	border-radius: 20px;
-	backdrop-filter: blur(10px);
-	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-	max-width: 600px;
-	width: 90%;
-}
-
-.error-icon {
-	font-size: 4rem;
-	margin-bottom: 20px;
-	animation: shake 0.5s ease-in-out;
-}
-
-@keyframes shake {
-
-	0%,
-	100% {
-		transform: translateX(0);
-	}
-
-	25% {
-		transform: translateX(-10px);
-	}
-
-	75% {
-		transform: translateX(10px);
-	}
-}
-
-.error-title {
-	font-size: 2rem;
-	font-weight: bold;
-	margin-bottom: 20px;
-	color: white;
-}
-
-.error-message {
-	font-size: 1.1rem;
-	margin-bottom: 20px;
-	color: rgba(255, 255, 255, 0.9);
-	padding: 15px;
-	background: rgba(255, 107, 107, 0.2);
-	border-radius: 8px;
-	border: 1px solid rgba(255, 107, 107, 0.3);
-}
-
-.error-hints {
-	text-align: left;
-	margin: 20px 0;
-	padding: 20px;
-	background: rgba(255, 255, 255, 0.05);
-	border-radius: 10px;
-	color: white;
-}
-
-.error-hints p {
-	font-weight: 600;
-	margin-bottom: 10px;
-	font-size: 1rem;
-}
-
-.error-hints ul {
-	list-style: none;
-	padding: 0;
-	margin: 0;
-}
-
-.error-hints li {
-	padding: 8px 0;
-	padding-left: 25px;
-	position: relative;
-	opacity: 0.9;
-	font-size: 0.95rem;
-}
-
-.error-hints li::before {
-	content: "•";
-	position: absolute;
-	left: 10px;
-	color: #ffd700;
-	font-weight: bold;
-}
-
-.error-actions {
-	display: flex;
-	gap: 15px;
-	justify-content: center;
-	margin-top: 30px;
-}
-
-.retry-button,
-.back-button {
-	padding: 14px 28px;
-	border: none;
-	border-radius: 10px;
-	cursor: pointer;
-	font-size: 16px;
-	font-weight: 600;
-	transition: all 0.3s ease;
-	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.retry-button {
-	background: #4caf50;
-	color: white;
-	flex: 1;
-}
-
-.retry-button:hover {
-	background: #45a049;
-	transform: translateY(-2px);
-	box-shadow: 0 6px 12px rgba(76, 175, 80, 0.3);
-}
-
-.back-button {
-	background: rgba(255, 255, 255, 0.2);
-	color: white;
-	border: 1px solid rgba(255, 255, 255, 0.3);
-	flex: 1;
-}
-
-.back-button:hover {
-	background: rgba(255, 255, 255, 0.3);
-	transform: translateY(-2px);
-	box-shadow: 0 6px 12px rgba(255, 255, 255, 0.2);
 }
 
 /* 响应式设计 */
