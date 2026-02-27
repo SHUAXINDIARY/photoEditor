@@ -5,6 +5,7 @@ import { calcImageFitLayout } from '../editor/canvasLayout';
 import type { ImageFitLayout } from '../editor/canvasLayout';
 import { PixiFilterManager } from './PixiFilterManager';
 import { PixiBrushManager } from './PixiBrushManager';
+import { PixiTransformer } from './PixiTransformer';
 
 /**
  * 基于 PixiJS 的图片编辑器
@@ -25,9 +26,13 @@ export class PixiImageEditor implements IImageEditor {
 
 	private filterManager: PixiFilterManager;
 	private brushManager: PixiBrushManager | null = null;
+	private transformer: PixiTransformer | null = null;
 
 	/** 图片 fit 布局信息（由通用算法计算，引擎无关） */
 	private fitLayout: ImageFitLayout | null = null;
+
+	/** 当前是否选中图片 */
+	private isSelected = false;
 
 	/** 拖拽状态 */
 	private dragging = false;
@@ -78,11 +83,73 @@ export class PixiImageEditor implements IImageEditor {
 
 			this.app = app;
 			this.initialized = true;
+
+			this.transformer = new PixiTransformer(app, {
+				keepAspectRatio: true,
+			});
+			this.transformer.onTransformEnd = () => {
+				this.updateHitArea();
+				this.onImageStateChange?.();
+			};
+
+			this.setupStageClick();
 		})().finally(() => {
 			this.initPromise = null;
 		});
 
 		return this.initPromise;
+	}
+
+	/**
+	 * 设置点击空白处取消选中
+	 */
+	private setupStageClick(): void {
+		if (!this.app) return;
+
+		this.app.stage.on('pointerdown', (e: FederatedPointerEvent) => {
+			if (e.target === this.app?.stage) {
+				this.deselectImage();
+			}
+		});
+	}
+
+	/**
+	 * 选中图片，显示变换控制器
+	 */
+	private selectImage(): void {
+		if (!this.imageContainer || !this.transformer || !this.fitLayout || this.isBrushMode) return;
+
+		this.isSelected = true;
+		this.transformer.attach(
+			this.imageContainer,
+			this.fitLayout.displayWidth,
+			this.fitLayout.displayHeight,
+		);
+	}
+
+	/**
+	 * 取消选中图片
+	 */
+	private deselectImage(): void {
+		if (!this.transformer) return;
+		this.isSelected = false;
+		this.transformer.detach();
+		this.app?.renderer.render(this.app.stage);
+	}
+
+	/**
+	 * 更新 hitArea 以匹配当前缩放后的可见区域
+	 * @description hitArea 是相对于容器局部坐标系的，不会随 scale 变化。
+	 * 因此 hitArea 始终保持为基础尺寸 displayWidth/displayHeight。
+	 */
+	private updateHitArea(): void {
+		if (!this.imageContainer || !this.fitLayout) return;
+		this.imageContainer.hitArea = new Rectangle(
+			0,
+			0,
+			this.fitLayout.displayWidth,
+			this.fitLayout.displayHeight,
+		);
 	}
 
 	/**
@@ -199,6 +266,10 @@ export class PixiImageEditor implements IImageEditor {
 
 		this.dragPointerDownHandler = (e: FederatedPointerEvent) => {
 			if (this.isBrushMode) return;
+
+			// 点击图片时选中它
+			this.selectImage();
+
 			this.dragging = true;
 			container.cursor = 'grabbing';
 			const pos = e.global;
@@ -215,6 +286,12 @@ export class PixiImageEditor implements IImageEditor {
 			const dy = e.global.y - this.dragStartY;
 			container.x = this.dragContainerStartX + dx;
 			container.y = this.dragContainerStartY + dy;
+
+			// 更新 transformer 位置
+			if (this.isSelected && this.transformer) {
+				this.transformer.update();
+			}
+
 			// PixiJS v8 使用按需渲染,拖拽时需手动触发渲染更新
 			this.app?.renderer.render(this.app.stage);
 		};
@@ -297,6 +374,12 @@ export class PixiImageEditor implements IImageEditor {
 		this.imageContainer.x = state.x;
 		this.imageContainer.y = state.y;
 		this.imageContainer.scale.set(state.scaleX, state.scaleY);
+
+		// 同步更新 transformer
+		if (this.isSelected && this.transformer) {
+			this.transformer.update();
+		}
+		this.app?.renderer.render(this.app.stage);
 	}
 
 	// ===== 滤镜效果 =====
@@ -340,6 +423,9 @@ export class PixiImageEditor implements IImageEditor {
 		this.isBrushMode = true;
 		this.imageContainer.cursor = 'crosshair';
 		this.brushManager.enable(color, size);
+
+		// 画笔模式下取消选中，隐藏 transformer
+		this.deselectImage();
 	}
 
 	public disableBrush(): void {
@@ -468,6 +554,12 @@ export class PixiImageEditor implements IImageEditor {
 		this.disableBrush();
 		this.clearImage();
 		this.filterManager.destroy();
+
+		if (this.transformer) {
+			this.transformer.destroy();
+			this.transformer = null;
+		}
+
 		if (this.containerEl) {
 			this.containerEl.style.width = '';
 			this.containerEl.style.height = '';

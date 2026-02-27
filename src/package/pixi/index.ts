@@ -6,3 +6,4 @@
 export { PixiImageEditor } from './PixiImageEditor';
 export { PixiFilterManager } from './PixiFilterManager';
 export { PixiBrushManager } from './PixiBrushManager';
+export { PixiTransformer } from './PixiTransformer';
