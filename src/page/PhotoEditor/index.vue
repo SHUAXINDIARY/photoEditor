@@ -2,7 +2,7 @@
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
 import { createImageEditor } from "../../package/editor";
 import type { IImageEditor, EditorEngine } from "../../package/editor";
-import { throttle, debounce } from "../../utils/utils";
+import { throttle } from "../../utils/utils";
 import { toastSuccess, toastWarning, toastError } from "../../utils/toast";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
@@ -31,151 +31,6 @@ const brushSize = ref<number>(10); // 画笔粗细：1 到 50
 // 对比模式状态
 const isComparing = ref<boolean>(false); // 是否正在对比
 
-// localStorage 键名
-const STORAGE_KEY = "photoEditor_state";
-
-// localStorage 可用性标记，避免反复触发配额错误
-let storageDisabled = false;
-
-// 保存状态到本地缓存
-const saveStateToStorage = () => {
-	// localStorage 已经被判定为不可用（例如配额已满），直接跳过
-	if (storageDisabled) return;
-	if (!imageUrl.value || !imageEditor.value) return;
-
-	const imageState = imageEditor.value.getImageState();
-	const state = {
-		imageUrl: imageUrl.value,
-		contrast: contrast.value,
-		temperature: temperature.value,
-		saturation: saturation.value,
-		enhance: enhance.value,
-		blur: blur.value,
-		shadow: shadow.value,
-		highlight: highlight.value,
-		imageState: imageState,
-		timestamp: Date.now(),
-	};
-
-	try {
-		const serialized = JSON.stringify(state);
-
-		// 如果数据过大（通常是图片 Base64 太长），避免触发配额错误
-		// 这里只是一个经验阈值，大约 ~2MB 字符
-		if (serialized.length > 2_000_000) {
-			console.warn(
-				"[photoEditor] 状态过大，已停止写入 localStorage（不再持久化图片，以避免配额错误）。"
-			);
-			storageDisabled = true;
-			return;
-		}
-
-		localStorage.setItem(STORAGE_KEY, serialized);
-	} catch (error: any) {
-		console.warn("[photoEditor] 保存状态失败，已禁用后续 localStorage 写入：", error);
-		// 防止后续频繁报错
-		storageDisabled = true;
-	}
-};
-
-// 从本地缓存恢复状态
-const loadStateFromStorage = async (): Promise<boolean> => {
-	try {
-		const stored = localStorage.getItem(STORAGE_KEY);
-		if (!stored) return false;
-
-		const state = JSON.parse(stored);
-		if (!state.imageUrl) return false;
-
-		// 恢复图片 URL
-		imageUrl.value = state.imageUrl;
-
-		// 确保编辑器已初始化
-		if (!imageEditor.value && containerRef.value) {
-			await initImageEditor();
-		}
-
-		// 等待编辑器初始化
-		await nextTick();
-
-		if (imageEditor.value) {
-			// 加载图片
-			await imageEditor.value.loadImage(state.imageUrl);
-
-			// 恢复滤镜参数
-			if (typeof state.contrast === "number") {
-				contrast.value = state.contrast;
-				imageEditor.value.setContrast(state.contrast);
-			}
-			if (typeof state.temperature === "number") {
-				temperature.value = state.temperature;
-				imageEditor.value.setTemperature(state.temperature);
-			}
-			if (typeof state.saturation === "number") {
-				saturation.value = state.saturation;
-				imageEditor.value.setSaturation(state.saturation);
-			}
-			if (typeof state.enhance === "number") {
-				enhance.value = state.enhance;
-				imageEditor.value.setEnhance(state.enhance);
-			}
-			if (typeof state.blur === "number") {
-				blur.value = state.blur;
-				imageEditor.value.setBlur(state.blur);
-			}
-			if (typeof state.shadow === "number") {
-				shadow.value = state.shadow;
-				imageEditor.value.setShadow(state.shadow);
-			}
-			if (typeof state.highlight === "number") {
-				highlight.value = state.highlight;
-				imageEditor.value.setHighlight(state.highlight);
-			}
-
-			// 恢复图片状态（位置、缩放）
-			if (state.imageState) {
-				await nextTick();
-				// 等待图片完全加载后再恢复状态
-				setTimeout(() => {
-					if (imageEditor.value) {
-						imageEditor.value.setImageState(state.imageState);
-					}
-				}, 100);
-			}
-
-			return true;
-		}
-	} catch (error) {
-		console.error("恢复状态失败:", error);
-	}
-	return false;
-};
-
-// 清除本地缓存
-const clearStorage = () => {
-	// 画笔模式下不允许清除整体状态，避免误操作
-	if (isBrushMode.value) return;
-	try {
-		localStorage.removeItem(STORAGE_KEY);
-		imageUrl.value = "";
-		contrast.value = 0;
-		temperature.value = 0;
-		saturation.value = 0;
-		enhance.value = 0;
-		blur.value = 0;
-		isBrushMode.value = false;
-		brushSize.value = 10;
-		if (imageEditor.value) {
-			imageEditor.value.disableBrush();
-			imageEditor.value.clearImage();
-			imageEditor.value.resetFilters();
-		}
-		toastSuccess("缓存已清除");
-	} catch (error) {
-		console.error("清除缓存失败:", error);
-	}
-};
-
 // 节流更新滤镜（每 50ms 最多更新一次）
 const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur' | 'shadow' | 'highlight', value: number) => {
 	if (!imageEditor.value) return;
@@ -196,9 +51,6 @@ const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'satu
 	}
 }, 50);
 
-// 防抖保存状态（延迟 500ms）
-const debouncedSaveState = debounce(saveStateToStorage, 500);
-
 // 处理对比度变化
 const handleContrastChange = (value: number) => {
 	// 画笔模式下不允许调整滤镜
@@ -206,8 +58,6 @@ const handleContrastChange = (value: number) => {
 	contrast.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('contrast', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：对比度
@@ -222,8 +72,6 @@ const handleTemperatureChange = (value: number) => {
 	temperature.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('temperature', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：色温
@@ -237,7 +85,6 @@ const handleSaturationChange = (value: number) => {
 	if (isBrushMode.value) return;
 	saturation.value = value;
 	throttledUpdateFilter('saturation', value);
-	debouncedSaveState();
 };
 
 // 重置单项：饱和度
@@ -252,8 +99,6 @@ const handleEnhanceChange = (value: number) => {
 	enhance.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('enhance', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：增强
@@ -268,8 +113,6 @@ const handleBlurChange = (value: number) => {
 	blur.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('blur', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：模糊
@@ -284,8 +127,6 @@ const handleShadowChange = (value: number) => {
 	shadow.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('shadow', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：阴影
@@ -300,8 +141,6 @@ const handleHighlightChange = (value: number) => {
 	highlight.value = value;
 	// 使用节流更新滤镜，避免频繁重绘
 	throttledUpdateFilter('highlight', value);
-	// 使用防抖保存，避免频繁操作
-	debouncedSaveState();
 };
 
 // 重置单项：高光
@@ -424,13 +263,6 @@ const initImageEditor = async () => {
 		rotateEnabled: false,
 		engine: currentEngine.value,
 	});
-
-	// 设置图片状态变化回调
-	if (imageEditor.value) {
-		imageEditor.value.onImageStateChange = () => {
-			saveStateToStorage();
-		};
-	}
 };
 
 /**
@@ -529,8 +361,6 @@ const handleFileUpload = async (event: Event) => {
 				enhance.value = 0;
 				blur.value = 0;
 				await imageEditor.value.loadImage(result);
-				// 保存状态
-				saveStateToStorage();
 			} catch (error) {
 				console.error("加载图片失败:", error);
 				toastError("加载图片失败，请重试");
@@ -552,13 +382,6 @@ onMounted(async () => {
 	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(async () => {
 		await initImageEditor();
-
-		// 尝试从缓存恢复状态
-		await nextTick();
-		const restored = await loadStateFromStorage();
-		if (restored) {
-			console.log("已从缓存恢复图片状态");
-		}
 	});
 });
 
@@ -633,7 +456,7 @@ const max = 100;
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="contrast"
 							:disabled="isBrushMode"
-							@input="handleContrastChange(contrast)" @change="saveStateToStorage" class="tool-slider" />
+							@input="handleContrastChange(contrast)" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>{{ min }}</span>
 							<span>0</span>
@@ -648,7 +471,7 @@ const max = 100;
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="temperature"
 							:disabled="isBrushMode"
-							@input="handleTemperatureChange(temperature)" @change="saveStateToStorage"
+							@input="handleTemperatureChange(temperature)"
 							class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>暖</span>
@@ -664,7 +487,7 @@ const max = 100;
 						</label>
 						<input type="range" :min="min" :max="max" step="1" v-model.number="saturation"
 							:disabled="isBrushMode"
-							@input="handleSaturationChange(saturation)" @change="saveStateToStorage"
+							@input="handleSaturationChange(saturation)"
 							class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>{{ min }}</span>
@@ -680,7 +503,7 @@ const max = 100;
 						</label>
 						<input type="range" min="0" max="100" step="1" v-model.number="blur"
 							:disabled="isBrushMode"
-							@input="handleBlurChange(blur)" @change="saveStateToStorage" class="tool-slider" />
+							@input="handleBlurChange(blur)" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>0</span>
 							<span>50</span>
@@ -695,7 +518,7 @@ const max = 100;
 						</label>
 						<input type="range" min="0" max="100" step="1" v-model.number="enhance"
 							:disabled="isBrushMode"
-							@input="handleEnhanceChange(enhance)" @change="saveStateToStorage" class="tool-slider" />
+							@input="handleEnhanceChange(enhance)" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>0</span>
 							<span>50</span>
@@ -710,7 +533,7 @@ const max = 100;
 						</label>
 						<input type="range" min="-100" max="100" step="1" v-model.number="shadow"
 							:disabled="isBrushMode"
-							@input="handleShadowChange(shadow)" @change="saveStateToStorage" class="tool-slider" />
+							@input="handleShadowChange(shadow)" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>压暗</span>
 							<span>0</span>
@@ -725,7 +548,7 @@ const max = 100;
 						</label>
 						<input type="range" min="-100" max="100" step="1" v-model.number="highlight"
 							:disabled="isBrushMode"
-							@input="handleHighlightChange(highlight)" @change="saveStateToStorage" class="tool-slider" />
+							@input="handleHighlightChange(highlight)" class="tool-slider" />
 						<div class="tool-range-labels">
 							<span>压暗</span>
 							<span>0</span>
@@ -735,10 +558,6 @@ const max = 100;
 					<!-- 重置按钮 -->
 					<button @click="handleReset" :disabled="isBrushMode" class="reset-button">
 						重置调整
-					</button>
-					<!-- 清除缓存按钮 -->
-					<button @click="clearStorage" :disabled="isBrushMode" class="clear-button">
-						清除缓存
 					</button>
 					<!-- 导出编辑后图片按钮 -->
 					<button @click="handleExportEditedImage" :disabled="!imageUrl" class="export-edited-button">
@@ -1090,33 +909,6 @@ const max = 100;
 	background: #e0e0e0;
 	color: #999;
 	border-color: #d0d0d0;
-	cursor: not-allowed;
-	opacity: 0.6;
-}
-
-.clear-button {
-	width: 100%;
-	padding: 12px 24px;
-	background: #ff6b6b;
-	color: white;
-	border: none;
-	border-radius: 8px;
-	cursor: pointer;
-	font-size: 0.95rem;
-	font-weight: 500;
-	transition: all 0.3s ease;
-	margin-top: 12px;
-}
-
-.clear-button:hover:not(:disabled) {
-	background: #ff5252;
-	transform: translateY(-1px);
-	box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
-}
-
-.clear-button:disabled {
-	background: #cccccc;
-	color: #999;
 	cursor: not-allowed;
 	opacity: 0.6;
 }

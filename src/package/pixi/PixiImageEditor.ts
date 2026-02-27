@@ -77,6 +77,26 @@ export class PixiImageEditor implements IImageEditor {
 		return this.initPromise;
 	}
 
+	/**
+	 * 释放当前图片节点（不销毁底层 textureSource，避免与 renderer 销毁阶段重复释放）
+	 */
+	private disposeImageNodes(): void {
+		if (!this.imageContainer) return;
+
+		if (this.app?.stage && this.imageContainer.parent === this.app.stage) {
+			this.app.stage.removeChild(this.imageContainer);
+		}
+
+		if (this.imageSprite) {
+			this.imageSprite.filters = [];
+			this.imageSprite.destroy({ texture: false, textureSource: false });
+			this.imageSprite = null;
+		}
+
+		this.imageContainer.destroy({ children: false });
+		this.imageContainer = null;
+	}
+
 	// ===== 图片加载与管理 =====
 
 	/**
@@ -117,15 +137,12 @@ export class PixiImageEditor implements IImageEditor {
 			this.filterManager.setSpriteContext(null);
 			this.brushManager?.destroy();
 			this.brushManager = null;
-			this.app.stage.removeChild(this.imageContainer);
-			this.imageContainer.destroy({ children: true });
-			this.imageContainer = null;
-			this.imageSprite = null;
+			this.disposeImageNodes();
 		}
 
 		const sprite = await this.loadSprite(url);
 		if (seq !== this.loadSeq) {
-			sprite.destroy();
+			sprite.destroy({ texture: false, textureSource: false });
 			return;
 		}
 		const texture = sprite.texture;
@@ -212,9 +229,7 @@ export class PixiImageEditor implements IImageEditor {
 		if (this.imageContainer) {
 			this.brushManager?.destroy();
 			this.brushManager = null;
-			this.imageContainer.destroy({ children: true });
-			this.imageContainer = null;
-			this.imageSprite = null;
+			this.disposeImageNodes();
 		}
 	}
 
@@ -412,11 +427,7 @@ export class PixiImageEditor implements IImageEditor {
 		this.brushManager?.destroy();
 		this.brushManager = null;
 		this.filterManager.destroy();
-		if (this.imageContainer) {
-			this.imageContainer.destroy({ children: true });
-			this.imageContainer = null;
-			this.imageSprite = null;
-		}
+		this.disposeImageNodes();
 		if (this.app) {
 			this.app.destroy(true, { children: true });
 			this.app = null;
