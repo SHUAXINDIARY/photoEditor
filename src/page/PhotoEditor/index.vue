@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
-import { ImageEditor } from "../../package/Image/ImageEditor";
+import { createImageEditor } from "../../package/editor";
+import type { IImageEditor, EditorEngine } from "../../package/editor";
 import { throttle, debounce } from "../../utils/utils";
 import { toastSuccess, toastWarning, toastError } from "../../utils/toast";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
-const imageEditor = ref<ImageEditor | null>(null);
+const imageEditor = ref<IImageEditor | null>(null);
+
+/** 当前使用的渲染引擎，可通过 UI 切换 */
+const currentEngine = ref<EditorEngine>('konva');
 const stageConfig = ref({
 	width: 800,
 	height: 600,
@@ -88,7 +92,7 @@ const loadStateFromStorage = async (): Promise<boolean> => {
 
 		// 确保编辑器已初始化
 		if (!imageEditor.value && containerRef.value) {
-			initImageEditor();
+			await initImageEditor();
 		}
 
 		// 等待编辑器初始化
@@ -411,13 +415,14 @@ const toggleCompare = () => {
 };
 
 // 初始化图片编辑器
-const initImageEditor = () => {
+const initImageEditor = async () => {
 	if (!containerRef.value) return;
 
-	imageEditor.value = new ImageEditor(containerRef.value, {
+	imageEditor.value = await createImageEditor(containerRef.value, {
 		width: stageConfig.value.width,
 		height: stageConfig.value.height,
 		rotateEnabled: false,
+		engine: currentEngine.value,
 	});
 
 	// 设置图片状态变化回调
@@ -425,6 +430,70 @@ const initImageEditor = () => {
 		imageEditor.value.onImageStateChange = () => {
 			saveStateToStorage();
 		};
+	}
+};
+
+/**
+ * 切换渲染引擎
+ * @description 销毁当前编辑器并使用新引擎重新创建，自动恢复图片和滤镜状态
+ */
+const switchEngine = async (engine: EditorEngine) => {
+	if (engine === currentEngine.value) return;
+	if (isBrushMode.value) {
+		toastWarning("请先关闭画笔模式再切换引擎");
+		return;
+	}
+
+	const savedUrl = imageUrl.value;
+	const savedFilters = {
+		contrast: contrast.value,
+		temperature: temperature.value,
+		saturation: saturation.value,
+		enhance: enhance.value,
+		blur: blur.value,
+		shadow: shadow.value,
+		highlight: highlight.value,
+	};
+	const savedImageState = imageEditor.value?.getImageState() ?? null;
+
+	// 销毁当前编辑器
+	if (imageEditor.value) {
+		imageEditor.value.destroy();
+		imageEditor.value = null;
+	}
+	// 清空容器 DOM
+	if (containerRef.value) {
+		containerRef.value.innerHTML = '';
+	}
+
+	currentEngine.value = engine;
+	await initImageEditor();
+
+	// initImageEditor 内部已重新赋值 imageEditor.value，
+	// 通过函数调用断开 TS 控制流窄化
+	const getEditor = () => imageEditor.value;
+	const editor = getEditor();
+	if (savedUrl && editor) {
+		try {
+			await editor.loadImage(savedUrl);
+			editor.setContrast(savedFilters.contrast);
+			editor.setTemperature(savedFilters.temperature);
+			editor.setSaturation(savedFilters.saturation);
+			editor.setEnhance(savedFilters.enhance);
+			editor.setBlur(savedFilters.blur);
+			editor.setShadow(savedFilters.shadow);
+			editor.setHighlight(savedFilters.highlight);
+			if (savedImageState) {
+				await nextTick();
+				setTimeout(() => {
+					editor.setImageState(savedImageState);
+				}, 100);
+			}
+			toastSuccess(`已切换到 ${engine === 'pixi' ? 'PixiJS (GPU)' : 'Konva (CPU)'} 引擎`);
+		} catch (error) {
+			console.error("切换引擎后恢复状态失败:", error);
+			toastError("切换引擎失败，请重新上传图片");
+		}
 	}
 };
 
@@ -447,7 +516,7 @@ const handleFileUpload = async (event: Event) => {
 
 		// 确保编辑器已初始化
 		if (!imageEditor.value && containerRef.value) {
-			initImageEditor();
+			await initImageEditor();
 		}
 
 		// 加载图片
@@ -482,7 +551,7 @@ onMounted(async () => {
 
 	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(async () => {
-		initImageEditor();
+		await initImageEditor();
 
 		// 尝试从缓存恢复状态
 		await nextTick();
@@ -518,6 +587,23 @@ const max = 100;
 				<label for="file-input" class="upload-button">
 					选择图片上传
 				</label>
+				<!-- 引擎切换 -->
+				<div class="engine-switch">
+					<button
+						class="engine-button"
+						:class="{ 'active': currentEngine === 'konva' }"
+						@click="switchEngine('konva')"
+					>
+						Konva (CPU)
+					</button>
+					<button
+						class="engine-button"
+						:class="{ 'active': currentEngine === 'pixi' }"
+						@click="switchEngine('pixi')"
+					>
+						PixiJS (GPU)
+					</button>
+				</div>
 				<!-- 对比按钮 -->
 				<button 
 					v-if="imageUrl" 
@@ -765,6 +851,45 @@ const max = 100;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+}
+
+.engine-switch {
+	display: flex;
+	gap: 0;
+	border-radius: 8px;
+	overflow: hidden;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.engine-button {
+	padding: 10px 18px;
+	background: rgba(255, 255, 255, 0.85);
+	color: #667eea;
+	border: 2px solid #667eea;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 600;
+	transition: all 0.3s ease;
+	user-select: none;
+}
+
+.engine-button:first-child {
+	border-radius: 8px 0 0 8px;
+	border-right: 1px solid #667eea;
+}
+
+.engine-button:last-child {
+	border-radius: 0 8px 8px 0;
+	border-left: 1px solid #667eea;
+}
+
+.engine-button.active {
+	background: #667eea;
+	color: white;
+}
+
+.engine-button:hover:not(.active) {
+	background: rgba(255, 255, 255, 1);
 }
 
 .compare-button {
