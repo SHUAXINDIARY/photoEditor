@@ -19,3 +19,6 @@ export { createImageEditor } from './createImageEditor';
 export type { CreateImageEditorOptions } from './createImageEditor';
 
 export { KonvaImageEditorAdapter } from './KonvaImageEditorAdapter';
+
+export { calcCanvasSize, calcImageFitLayout } from './canvasLayout';
+export type { ImageFitLayout, ContainerSizeParams } from './canvasLayout';

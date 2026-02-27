@@ -1,6 +1,8 @@
-import { Application, Sprite, Container } from 'pixi.js';
+import { Application, Sprite, Container, Rectangle } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import type { IImageEditor, ImageEditorConfig, ImageState } from '../editor/types';
+import { calcImageFitLayout } from '../editor/canvasLayout';
+import type { ImageFitLayout } from '../editor/canvasLayout';
 import { PixiFilterManager } from './PixiFilterManager';
 import { PixiBrushManager } from './PixiBrushManager';
 
@@ -24,11 +26,8 @@ export class PixiImageEditor implements IImageEditor {
 	private filterManager: PixiFilterManager;
 	private brushManager: PixiBrushManager | null = null;
 
-	/** 原始图片尺寸 */
-	private originalWidth = 0;
-	private originalHeight = 0;
-	/** 图片在画布上的初始缩放 */
-	private fitScale = 1;
+	/** 图片 fit 布局信息（由通用算法计算，引擎无关） */
+	private fitLayout: ImageFitLayout | null = null;
 
 	/** 拖拽状态 */
 	private dragging = false;
@@ -36,6 +35,9 @@ export class PixiImageEditor implements IImageEditor {
 	private dragStartY = 0;
 	private dragContainerStartX = 0;
 	private dragContainerStartY = 0;
+	private dragPointerDownHandler: ((e: FederatedPointerEvent) => void) | null = null;
+	private stagePointerMoveHandler: ((e: FederatedPointerEvent) => void) | null = null;
+	private stagePointerUpHandler: (() => void) | null = null;
 
 	public onImageStateChange?: () => void;
 
@@ -47,7 +49,9 @@ export class PixiImageEditor implements IImageEditor {
 
 	/**
 	 * 确保 PixiJS Application 已初始化
-	 * @description PixiJS v8 需要异步初始化
+	 * @description PixiJS v8 需要异步初始化。
+	 * 与 Konva 对齐：使用 resolution=1 避免高 DPI 下坐标系差异，
+	 * 并显式设置容器 DOM 尺寸以匹配 Konva 的布局行为。
 	 */
 	private async ensureInit(): Promise<void> {
 		if (this.initialized) return;
@@ -62,8 +66,12 @@ export class PixiImageEditor implements IImageEditor {
 				backgroundColor: 0xf5f5f5,
 				antialias: true,
 				preference: 'webgl',
+				resolution: 1,
 			});
 
+			// 与 Konva 对齐：给容器 div 设置固定尺寸，确保 flex 布局行为一致
+			this.containerEl!.style.width = `${this.config.width}px`;
+			this.containerEl!.style.height = `${this.config.height}px`;
 			this.containerEl!.appendChild(app.canvas);
 			app.stage.eventMode = 'static';
 			app.stage.hitArea = app.screen;
@@ -78,7 +86,9 @@ export class PixiImageEditor implements IImageEditor {
 	}
 
 	/**
-	 * 释放当前图片节点（不销毁底层 textureSource，避免与 renderer 销毁阶段重复释放）
+	 * 释放当前图片节点
+	 * @description 在 renderer 仍有效时显式销毁 texture/textureSource，
+	 * 避免在 app.destroy() 后续阶段清理纹理池时触发 WebGL 上下文竞态。
 	 */
 	private disposeImageNodes(): void {
 		if (!this.imageContainer) return;
@@ -89,7 +99,7 @@ export class PixiImageEditor implements IImageEditor {
 
 		if (this.imageSprite) {
 			this.imageSprite.filters = [];
-			this.imageSprite.destroy({ texture: false, textureSource: false });
+			this.imageSprite.destroy({ texture: true, textureSource: true });
 			this.imageSprite = null;
 		}
 
@@ -141,38 +151,30 @@ export class PixiImageEditor implements IImageEditor {
 		}
 
 		const sprite = await this.loadSprite(url);
-		if (seq !== this.loadSeq) {
-			sprite.destroy({ texture: false, textureSource: false });
+		if (seq !== this.loadSeq || !this.app) {
+			sprite.destroy({ texture: true, textureSource: true });
 			return;
 		}
 		const texture = sprite.texture;
-		const stageWidth = this.app.screen.width;
-		const stageHeight = this.app.screen.height;
 
-		this.originalWidth = texture.width;
-		this.originalHeight = texture.height;
-
-		const scale = Math.min(
-			stageWidth / texture.width,
-			stageHeight / texture.height,
-			1,
+		const layout = calcImageFitLayout(
+			this.app.screen.width,
+			this.app.screen.height,
+			texture.width,
+			texture.height,
 		);
-		this.fitScale = scale;
-
-		const displayW = texture.width * scale;
-		const displayH = texture.height * scale;
-		const x = (stageWidth - displayW) / 2;
-		const y = (stageHeight - displayH) / 2;
+		this.fitLayout = layout;
 
 		this.imageContainer = new Container();
-		this.imageContainer.x = x;
-		this.imageContainer.y = y;
+		this.imageContainer.x = layout.x;
+		this.imageContainer.y = layout.y;
 		this.imageContainer.eventMode = 'static';
 		this.imageContainer.cursor = 'grab';
+		this.imageContainer.hitArea = new Rectangle(0, 0, layout.displayWidth, layout.displayHeight);
 
 		this.imageSprite = sprite;
-		// 使用 scale setter，保证首次写入时正确初始化 ObservablePoint observer
-		this.imageSprite.scale = scale;
+		this.imageSprite.eventMode = 'static';
+		this.imageSprite.scale = layout.scale;
 		this.imageContainer.addChild(this.imageSprite);
 
 		this.filterManager.setSpriteContext(this.imageSprite);
@@ -190,8 +192,12 @@ export class PixiImageEditor implements IImageEditor {
 	private setupDrag(): void {
 		if (!this.imageContainer || !this.app) return;
 		const container = this.imageContainer;
+		const stage = this.app.stage;
 
-		container.on('pointerdown', (e: FederatedPointerEvent) => {
+		// 防止重复绑定导致监听器累积
+		this.cleanupDrag();
+
+		this.dragPointerDownHandler = (e: FederatedPointerEvent) => {
 			if (this.isBrushMode) return;
 			this.dragging = true;
 			container.cursor = 'grabbing';
@@ -200,31 +206,58 @@ export class PixiImageEditor implements IImageEditor {
 			this.dragStartY = pos.y;
 			this.dragContainerStartX = container.x;
 			this.dragContainerStartY = container.y;
-		});
+		};
+		container.on('pointerdown', this.dragPointerDownHandler);
 
-		this.app.stage.on('pointermove', (e: FederatedPointerEvent) => {
+		this.stagePointerMoveHandler = (e: FederatedPointerEvent) => {
 			if (!this.dragging) return;
 			const dx = e.global.x - this.dragStartX;
 			const dy = e.global.y - this.dragStartY;
 			container.x = this.dragContainerStartX + dx;
 			container.y = this.dragContainerStartY + dy;
-		});
+			// PixiJS v8 使用按需渲染,拖拽时需手动触发渲染更新
+			this.app?.renderer.render(this.app.stage);
+		};
+		stage.on('pointermove', this.stagePointerMoveHandler);
 
-		const endDrag = () => {
+		this.stagePointerUpHandler = () => {
 			if (!this.dragging) return;
 			this.dragging = false;
 			container.cursor = this.isBrushMode ? 'crosshair' : 'grab';
 			this.onImageStateChange?.();
 		};
 
-		this.app.stage.on('pointerup', endDrag);
-		this.app.stage.on('pointerupoutside', endDrag);
+		stage.on('pointerup', this.stagePointerUpHandler);
+		stage.on('pointerupoutside', this.stagePointerUpHandler);
+	}
+
+	/**
+	 * 清理拖拽事件绑定
+	 */
+	private cleanupDrag(): void {
+		if (this.imageContainer && this.dragPointerDownHandler) {
+			this.imageContainer.off('pointerdown', this.dragPointerDownHandler);
+		}
+		if (this.app?.stage && this.stagePointerMoveHandler) {
+			this.app.stage.off('pointermove', this.stagePointerMoveHandler);
+		}
+		if (this.app?.stage && this.stagePointerUpHandler) {
+			this.app.stage.off('pointerup', this.stagePointerUpHandler);
+			this.app.stage.off('pointerupoutside', this.stagePointerUpHandler);
+		}
+
+		this.dragPointerDownHandler = null;
+		this.stagePointerMoveHandler = null;
+		this.stagePointerUpHandler = null;
+		this.dragging = false;
 	}
 
 	/**
 	 * 清除当前图片
 	 */
 	public clearImage(): void {
+		this.loadSeq += 1;
+		this.cleanupDrag();
 		this.filterManager.setSpriteContext(null);
 		if (this.imageContainer) {
 			this.brushManager?.destroy();
@@ -241,6 +274,10 @@ export class PixiImageEditor implements IImageEditor {
 		this.app.renderer.resize(width, height);
 		this.config.width = width;
 		this.config.height = height;
+		if (this.containerEl) {
+			this.containerEl.style.width = `${width}px`;
+			this.containerEl.style.height = `${height}px`;
+		}
 	}
 
 	// ===== 图片状态 =====
@@ -337,14 +374,16 @@ export class PixiImageEditor implements IImageEditor {
 		mimeType = 'image/png',
 		quality?: number,
 	): Promise<string> {
-		if (!this.imageSprite || !this.app) {
+		if (!this.imageSprite || !this.app || !this.fitLayout) {
 			throw new Error('图片未加载');
 		}
 
+		const { originalWidth, originalHeight, scale } = this.fitLayout;
+
 		const tempApp = new Application();
 		await tempApp.init({
-			width: this.originalWidth,
-			height: this.originalHeight,
+			width: originalWidth,
+			height: originalHeight,
 			backgroundColor: 0xffffff,
 			antialias: true,
 			preference: 'webgl',
@@ -353,8 +392,8 @@ export class PixiImageEditor implements IImageEditor {
 		try {
 			const texture = this.imageSprite.texture;
 			const tempSprite = new Sprite(texture);
-			tempSprite.width = this.originalWidth;
-			tempSprite.height = this.originalHeight;
+			tempSprite.width = originalWidth;
+			tempSprite.height = originalHeight;
 
 			const filters = this.filterManager.cloneFilters();
 			if (filters.length > 0) {
@@ -363,14 +402,13 @@ export class PixiImageEditor implements IImageEditor {
 
 			tempApp.stage.addChild(tempSprite);
 
-			// 如果有画笔，叠加渲染
 			if (this.brushManager?.hasStrokes()) {
 				const brushCanvas = document.createElement('canvas');
-				brushCanvas.width = this.originalWidth;
-				brushCanvas.height = this.originalHeight;
+				brushCanvas.width = originalWidth;
+				brushCanvas.height = originalHeight;
 				const ctx = brushCanvas.getContext('2d')!;
 
-				const scaleRatio = 1 / this.fitScale;
+				const scaleRatio = 1 / scale;
 				this.brushManager.renderToCanvas(ctx, scaleRatio);
 
 				const brushSprite = Sprite.from(brushCanvas, true);
@@ -402,19 +440,21 @@ export class PixiImageEditor implements IImageEditor {
 	 * 导出画笔图层（黑色背景 + 白色画笔）
 	 */
 	public async exportBrushLayer(): Promise<string> {
-		if (!this.brushManager?.hasStrokes()) {
+		if (!this.brushManager?.hasStrokes() || !this.fitLayout) {
 			throw new Error('没有画笔痕迹可导出');
 		}
 
+		const { originalWidth, originalHeight, scale } = this.fitLayout;
+
 		const canvas = document.createElement('canvas');
-		canvas.width = this.originalWidth;
-		canvas.height = this.originalHeight;
+		canvas.width = originalWidth;
+		canvas.height = originalHeight;
 		const ctx = canvas.getContext('2d')!;
 
 		ctx.fillStyle = '#000000';
-		ctx.fillRect(0, 0, this.originalWidth, this.originalHeight);
+		ctx.fillRect(0, 0, originalWidth, originalHeight);
 
-		const scaleRatio = 1 / this.fitScale;
+		const scaleRatio = 1 / scale;
 		this.brushManager.renderToCanvas(ctx, scaleRatio, '#ffffff');
 
 		return canvas.toDataURL('image/png');
@@ -423,11 +463,15 @@ export class PixiImageEditor implements IImageEditor {
 	// ===== 资源清理 =====
 
 	public destroy(): void {
+		this.loadSeq += 1;
+		this.cleanupDrag();
 		this.disableBrush();
-		this.brushManager?.destroy();
-		this.brushManager = null;
+		this.clearImage();
 		this.filterManager.destroy();
-		this.disposeImageNodes();
+		if (this.containerEl) {
+			this.containerEl.style.width = '';
+			this.containerEl.style.height = '';
+		}
 		if (this.app) {
 			this.app.destroy(true, { children: true });
 			this.app = null;

@@ -2,11 +2,13 @@
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
 import { createImageEditor } from "../../package/editor";
 import type { IImageEditor, EditorEngine } from "../../package/editor";
+import { calcCanvasSize } from "../../package/editor/canvasLayout";
 import { throttle } from "../../utils/utils";
 import { toastSuccess, toastWarning, toastError } from "../../utils/toast";
 const containerRef = ref<HTMLDivElement | null>(null);
 const imageUrl = ref<string>("");
 const imageEditor = ref<IImageEditor | null>(null);
+const isSwitchingEngine = ref<boolean>(false);
 
 /** 当前使用的渲染引擎，可通过 UI 切换 */
 const currentEngine = ref<EditorEngine>('konva');
@@ -33,6 +35,7 @@ const isComparing = ref<boolean>(false); // 是否正在对比
 
 // 节流更新滤镜（每 50ms 最多更新一次）
 const throttledUpdateFilter = throttle((type: 'contrast' | 'temperature' | 'saturation' | 'enhance' | 'blur' | 'shadow' | 'highlight', value: number) => {
+	if (isSwitchingEngine.value) return;
 	if (!imageEditor.value) return;
 	if (type === 'contrast') {
 		imageEditor.value.setContrast(value);
@@ -271,6 +274,7 @@ const initImageEditor = async () => {
  */
 const switchEngine = async (engine: EditorEngine) => {
 	if (engine === currentEngine.value) return;
+	if (isSwitchingEngine.value) return;
 	if (isBrushMode.value) {
 		toastWarning("请先关闭画笔模式再切换引擎");
 		return;
@@ -288,25 +292,42 @@ const switchEngine = async (engine: EditorEngine) => {
 	};
 	const savedImageState = imageEditor.value?.getImageState() ?? null;
 
-	// 销毁当前编辑器
-	if (imageEditor.value) {
-		imageEditor.value.destroy();
+	isSwitchingEngine.value = true;
+
+	try {
+		// 强制彻底销毁当前编辑器实例
+		const prevEditor = imageEditor.value;
 		imageEditor.value = null;
-	}
-	// 清空容器 DOM
-	if (containerRef.value) {
-		containerRef.value.innerHTML = '';
-	}
+		isComparing.value = false;
 
-	currentEngine.value = engine;
-	await initImageEditor();
+		if (prevEditor) {
+			try {
+				prevEditor.disableBrush();
+				prevEditor.resetFilters();
+				prevEditor.clearImage();
+			} finally {
+				prevEditor.destroy();
+			}
+		}
 
-	// initImageEditor 内部已重新赋值 imageEditor.value，
-	// 通过函数调用断开 TS 控制流窄化
-	const getEditor = () => imageEditor.value;
-	const editor = getEditor();
-	if (savedUrl && editor) {
-		try {
+		// 等待一个渲染帧，确保旧实例资源释放完成后再创建新实例
+		await new Promise<void>((resolve) => {
+			requestAnimationFrame(() => resolve());
+		});
+
+		// 清空容器 DOM
+		if (containerRef.value) {
+			containerRef.value.innerHTML = '';
+		}
+
+		currentEngine.value = engine;
+		await initImageEditor();
+
+		// initImageEditor 内部已重新赋值 imageEditor.value，
+		// 通过函数调用断开 TS 控制流窄化
+		const getEditor = () => imageEditor.value;
+		const editor = getEditor();
+		if (savedUrl && editor) {
 			await editor.loadImage(savedUrl);
 			editor.setContrast(savedFilters.contrast);
 			editor.setTemperature(savedFilters.temperature);
@@ -321,11 +342,14 @@ const switchEngine = async (engine: EditorEngine) => {
 					editor.setImageState(savedImageState);
 				}, 100);
 			}
-			toastSuccess(`已切换到 ${engine === 'pixi' ? 'PixiJS (GPU)' : 'Konva (CPU)'} 引擎`);
-		} catch (error) {
-			console.error("切换引擎后恢复状态失败:", error);
-			toastError("切换引擎失败，请重新上传图片");
 		}
+
+		toastSuccess(`已切换到 ${engine === 'pixi' ? 'PixiJS (GPU)' : 'Konva (CPU)'} 引擎`);
+	} catch (error) {
+		console.error("切换引擎失败:", error);
+		toastError("切换引擎失败，请重新上传图片");
+	} finally {
+		isSwitchingEngine.value = false;
 	}
 };
 
@@ -371,15 +395,13 @@ const handleFileUpload = async (event: Event) => {
 };
 
 onMounted(async () => {
-	// 初始化画布大小
 	if (typeof window !== "undefined") {
-		stageConfig.value = {
-			width: window.innerWidth - 40,
-			height: window.innerHeight - 200,
-		};
+		stageConfig.value = calcCanvasSize({
+			viewportWidth: window.innerWidth,
+			viewportHeight: window.innerHeight,
+		});
 	}
 
-	// 初始化图片编辑器（容器始终存在，只是隐藏）
 	nextTick(async () => {
 		await initImageEditor();
 	});

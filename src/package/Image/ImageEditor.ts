@@ -1,6 +1,8 @@
 import Konva from "konva";
 import { registerCustomFilters } from "./KonvaFilter";
 import { ImageFilterManager } from "./ImageFilterManager";
+import { calcImageFitLayout } from "../editor/canvasLayout";
+import type { ImageFitLayout } from "../editor/canvasLayout";
 
 // 注册自定义滤镜（只注册一次）
 let filtersRegistered = false;
@@ -33,12 +35,11 @@ export class ImageEditor {
 	private brushColor: string = '#000000';
 	private brushSize: number = 10;
 	
-	// 原始图片尺寸（用于导出）
-	private originalImageWidth: number = 0;
-	private originalImageHeight: number = 0;
-	private imageScale: number = 1; // 图片在画布上的缩放比例
-	private imageOffsetX: number = 0; // 图片在画布上的 X 偏移
-	private imageOffsetY: number = 0; // 图片在画布上的 Y 偏移
+	/** 图片 fit 布局信息（由通用算法计算，引擎无关） */
+	private fitLayout: ImageFitLayout | null = null;
+	private imageScale: number = 1;
+	private imageOffsetX: number = 0;
+	private imageOffsetY: number = 0;
 
 	// 图片效果管理模块（与基础画布能力解耦）
 	private filterManager: ImageFilterManager;
@@ -105,93 +106,66 @@ export class ImageEditor {
 			const image = new Image();
 			image.onload = () => {
 				try {
-					const stageWidth = this.stage!.width();
-					const stageHeight = this.stage!.height();
-
-					// 保存原始图片尺寸
-					this.originalImageWidth = image.width;
-					this.originalImageHeight = image.height;
-
-					// 计算图片缩放比例以适应画布
-					const scale = Math.min(
-						stageWidth / image.width,
-						stageHeight / image.height,
-						1 // 不放大，只缩小
+					const layout = calcImageFitLayout(
+						this.stage!.width(),
+						this.stage!.height(),
+						image.width,
+						image.height,
 					);
-					this.imageScale = scale;
+					this.fitLayout = layout;
+					this.imageScale = layout.scale;
+					this.imageOffsetX = layout.x;
+					this.imageOffsetY = layout.y;
 
-					// 居中显示
-					const x = (stageWidth - image.width * scale) / 2;
-					const y = (stageHeight - image.height * scale) / 2;
-					this.imageOffsetX = x;
-					this.imageOffsetY = y;
-
-					// 创建 Group 来包含图片和画笔
 					this.imageGroup = new Konva.Group({
-						x: x,
-						y: y,
+						x: layout.x,
+						y: layout.y,
 						draggable: true,
 					});
 
-					// 创建 Konva 图片节点（相对于 Group 的位置为 0,0）
 					const konvaImage = new Konva.Image({
 						image: image,
 						x: 0,
 						y: 0,
-						scaleX: scale,
-						scaleY: scale,
-						draggable: false, // 图片本身不可拖拽，由 Group 控制
+						scaleX: layout.scale,
+						scaleY: layout.scale,
+						draggable: false,
 					});
 
-					// 启用缓存以提高滤镜性能
 					konvaImage.cache();
 
-					// 创建画笔层（Layer -> Group 改为直接在 Group 内）
-					// 注意：这里不再创建 Layer，而是直接用 Group 管理
-					this.brushLayer = new Konva.Layer(); // 保持引用方式，但实际画笔线条会添加到 imageGroup
-					
-					// 将图片添加到 Group
+					this.brushLayer = new Konva.Layer();
+
 					this.imageGroup.add(konvaImage as any);
 
-					// 添加 Group 点击事件
 					this.imageGroup.on("click", () => this.handleImageClick());
 
-					// 添加拖拽结束事件，用于保存状态
 					this.imageGroup.on("dragend", () => {
-						// 更新图片位置信息
 						this.imageOffsetX = this.imageGroup!.x();
 						this.imageOffsetY = this.imageGroup!.y();
 						this.onImageStateChange?.();
 					});
 
-					// 添加变换结束事件，用于保存状态
 					this.imageGroup.on("transformend", () => {
-						// 更新图片位置和缩放信息
 						this.imageOffsetX = this.imageGroup!.x();
 						this.imageOffsetY = this.imageGroup!.y();
-						this.imageScale = this.imageGroup!.scaleX() * scale; // 组的缩放 * 图片初始缩放
+						this.imageScale = this.imageGroup!.scaleX() * layout.scale;
 						this.onImageStateChange?.();
 					});
-					
-					// 添加拖拽事件，更新位置信息
+
 					this.imageGroup.on("dragmove", () => {
 						this.imageOffsetX = this.imageGroup!.x();
 						this.imageOffsetY = this.imageGroup!.y();
 					});
 
-					// 将 Group 添加到图层
 					this.layer!.add(this.imageGroup as any);
 
-					// 保存图片节点引用
 					this.imageNode = konvaImage;
 
-					// 告知滤镜模块当前图片与图层
 					this.filterManager.setImageContext(this.imageNode, this.layer!);
 
-					// 附加变换器到 Group
 					this.transformer!.nodes([this.imageGroup as any]);
 
-					// 重绘画布
 					this.layer!.draw();
 
 					resolve();
@@ -549,48 +523,44 @@ export class ImageEditor {
 	 */
 	public exportEditedImage(mimeType: string = 'image/png', quality?: number): Promise<string> {
 		return new Promise((resolve, reject) => {
-			if (!this.imageNode || !this.originalImageWidth || !this.originalImageHeight) {
+			if (!this.imageNode || !this.fitLayout) {
 				reject(new Error("图片未加载"));
 				return;
 			}
 
+			const { originalWidth, originalHeight } = this.fitLayout;
+
 			try {
-				// 创建临时 canvas，尺寸为原始图片尺寸
 				const tempCanvas = document.createElement('canvas');
-				tempCanvas.width = this.originalImageWidth;
-				tempCanvas.height = this.originalImageHeight;
+				tempCanvas.width = originalWidth;
+				tempCanvas.height = originalHeight;
 				const ctx = tempCanvas.getContext('2d');
 				if (!ctx) {
 					reject(new Error("无法创建 canvas 上下文"));
 					return;
 				}
 
-				// 获取应用了滤镜的图片
-				// 使用 Konva 的 toDataURL 方法获取当前图片节点的数据
-				// 需要创建一个临时的 stage 来导出
 				const tempStage = new Konva.Stage({
 					container: document.createElement('div'),
-					width: this.originalImageWidth,
-					height: this.originalImageHeight,
+					width: originalWidth,
+					height: originalHeight,
 				});
 
 				const tempLayer = new Konva.Layer();
 				tempStage.add(tempLayer);
 
-				// 创建新的图片节点，使用原始尺寸
 				const originalImage = (this.imageNode as any).image();
 				if (!originalImage) {
 					reject(new Error("无法获取原始图片"));
 					return;
 				}
 
-				// 复制当前图片节点，但使用原始尺寸
 				const tempImageNode = new Konva.Image({
 					image: originalImage,
 					x: 0,
 					y: 0,
-					width: this.originalImageWidth,
-					height: this.originalImageHeight,
+					width: originalWidth,
+					height: originalHeight,
 				});
 
 				// 复制所有滤镜和参数
@@ -624,18 +594,15 @@ export class ImageEditor {
 				tempLayer.add(tempImageNode);
 				tempLayer.draw();
 
-				// 获取应用了滤镜的图片数据
 				const imageDataURL = tempStage.toDataURL({ 
 					pixelRatio: 1,
 					mimeType: mimeType,
 					quality: quality 
 				});
 
-				// 加载图片到 canvas
 				const img = new Image();
 				img.onload = () => {
-					// 绘制应用了滤镜的图片
-					ctx.drawImage(img, 0, 0, this.originalImageWidth, this.originalImageHeight);
+					ctx.drawImage(img, 0, 0, originalWidth, originalHeight);
 
 					// 如果有画笔痕迹，叠加绘制画笔
 					if (this.imageGroup) {
@@ -710,12 +677,13 @@ export class ImageEditor {
 	 */
 	public exportBrushLayer(): Promise<string> {
 		return new Promise((resolve, reject) => {
-			if (!this.imageGroup || !this.originalImageWidth || !this.originalImageHeight) {
+			if (!this.imageGroup || !this.fitLayout) {
 				reject(new Error("画笔图层或图片未加载"));
 				return;
 			}
 
-			// 检查是否有画笔痕迹（Group 的第一个子元素是图片，其余是画笔线条）
+			const { originalWidth, originalHeight } = this.fitLayout;
+
 			const groupChildren = this.imageGroup.getChildren();
 			if (groupChildren.length <= 1) {
 				reject(new Error("没有画笔痕迹可导出"));
@@ -723,19 +691,17 @@ export class ImageEditor {
 			}
 
 			try {
-				// 创建临时 canvas，尺寸为原始图片尺寸，黑色背景
 				const tempCanvas = document.createElement('canvas');
-				tempCanvas.width = this.originalImageWidth;
-				tempCanvas.height = this.originalImageHeight;
+				tempCanvas.width = originalWidth;
+				tempCanvas.height = originalHeight;
 				const ctx = tempCanvas.getContext('2d');
 				if (!ctx) {
 					reject(new Error("无法创建 canvas 上下文"));
 					return;
 				}
 
-				// 填充黑色背景
 				ctx.fillStyle = '#000000';
-				ctx.fillRect(0, 0, this.originalImageWidth, this.originalImageHeight);
+				ctx.fillRect(0, 0, originalWidth, originalHeight);
 
 				// 设置画笔样式为白色
 				ctx.strokeStyle = '#ffffff';
