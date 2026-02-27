@@ -160,17 +160,22 @@ export class PixiImageEditor implements IImageEditor {
 	private disposeImageNodes(): void {
 		if (!this.imageContainer) return;
 
-		if (this.app?.stage && this.imageContainer.parent === this.app.stage) {
-			this.app.stage.removeChild(this.imageContainer);
-		}
+		try {
+			if (this.app?.stage && this.imageContainer.parent === this.app.stage) {
+				this.app.stage.removeChild(this.imageContainer);
+			}
 
-		if (this.imageSprite) {
-			this.imageSprite.filters = [];
-			this.imageSprite.destroy({ texture: true, textureSource: true });
-			this.imageSprite = null;
-		}
+			if (this.imageSprite) {
+				this.imageSprite.filters = [];
+				// 不销毁纹理，让 app.destroy 统一处理，避免 gc 竞态
+				this.imageSprite.destroy({ texture: false, textureSource: false });
+				this.imageSprite = null;
+			}
 
-		this.imageContainer.destroy({ children: false });
+			this.imageContainer.destroy({ children: false });
+		} catch {
+			// 忽略销毁过程中的错误
+		}
 		this.imageContainer = null;
 	}
 
@@ -335,12 +340,18 @@ export class PixiImageEditor implements IImageEditor {
 	public clearImage(): void {
 		this.loadSeq += 1;
 		this.cleanupDrag();
+		this.deselectImage();
 		this.filterManager.setSpriteContext(null);
 		if (this.imageContainer) {
-			this.brushManager?.destroy();
+			try {
+				this.brushManager?.destroy();
+			} catch {
+				// ignore
+			}
 			this.brushManager = null;
 			this.disposeImageNodes();
 		}
+		this.fitLayout = null;
 	}
 
 	/**
@@ -551,24 +562,62 @@ export class PixiImageEditor implements IImageEditor {
 	public destroy(): void {
 		this.loadSeq += 1;
 		this.cleanupDrag();
-		this.disableBrush();
-		this.clearImage();
-		this.filterManager.destroy();
 
+		// 先禁用画笔
+		try {
+			this.disableBrush();
+		} catch {
+			// ignore
+		}
+
+		// 清理滤镜管理器引用
+		this.filterManager.setSpriteContext(null);
+
+		// 销毁画笔管理器
+		if (this.brushManager) {
+			try {
+				this.brushManager.destroy();
+			} catch {
+				// ignore
+			}
+			this.brushManager = null;
+		}
+
+		// 销毁 transformer
 		if (this.transformer) {
-			this.transformer.destroy();
+			try {
+				this.transformer.destroy();
+			} catch {
+				// ignore
+			}
 			this.transformer = null;
 		}
 
+		// 清理图片节点（不销毁纹理）
+		this.disposeImageNodes();
+
+		// 销毁滤镜管理器
+		this.filterManager.destroy();
+
+		// 重置容器样式
 		if (this.containerEl) {
 			this.containerEl.style.width = '';
 			this.containerEl.style.height = '';
 		}
+
+		// 最后销毁 app，让它统一清理所有 WebGL 资源
 		if (this.app) {
-			this.app.destroy(true, { children: true });
+			try {
+				this.app.destroy(true, { children: true, texture: true, textureSource: true });
+			} catch {
+				// ignore
+			}
 			this.app = null;
 		}
+
 		this.containerEl = null;
 		this.initialized = false;
+		this.fitLayout = null;
+		this.isSelected = false;
 	}
 }

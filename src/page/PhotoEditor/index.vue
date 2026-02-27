@@ -271,7 +271,8 @@ const initImageEditor = async () => {
 
 /**
  * 选择渲染引擎（首次选择或切换引擎）
- * @description 用户必须先选择引擎才能进入编辑器
+ * @description 用户必须先选择引擎才能进入编辑器。
+ * 切换引擎时会完全重置状态，不保留滤镜参数。
  */
 const selectEngine = async (engine: EditorEngine) => {
 	// 如果正在切换，不允许再次切换
@@ -289,16 +290,6 @@ const selectEngine = async (engine: EditorEngine) => {
 	}
 
 	const savedUrl = imageUrl.value;
-	const savedFilters = {
-		contrast: contrast.value,
-		temperature: temperature.value,
-		saturation: saturation.value,
-		enhance: enhance.value,
-		blur: blur.value,
-		shadow: shadow.value,
-		highlight: highlight.value,
-	};
-	const savedImageState = imageEditor.value?.getImageState() ?? null;
 	const isFirstLoad = !currentEngine.value;
 
 	if (isFirstLoad) {
@@ -323,6 +314,15 @@ const selectEngine = async (engine: EditorEngine) => {
 			}
 		}
 
+		// 切换引擎时重置所有滤镜参数
+		contrast.value = 0;
+		temperature.value = 0;
+		saturation.value = 0;
+		enhance.value = 0;
+		blur.value = 0;
+		shadow.value = 0;
+		highlight.value = 0;
+
 		// 等待一个渲染帧，确保旧实例资源释放完成后再创建新实例
 		await new Promise<void>((resolve) => {
 			requestAnimationFrame(() => resolve());
@@ -339,25 +339,10 @@ const selectEngine = async (engine: EditorEngine) => {
 		await nextTick();
 		await initImageEditor();
 
-		// initImageEditor 内部已重新赋值 imageEditor.value，
-		// 通过函数调用断开 TS 控制流窄化
-		const getEditor = () => imageEditor.value;
-		const editor = getEditor();
+		// 重新加载图片（不恢复滤镜状态）
+		const editor = imageEditor.value;
 		if (savedUrl && editor) {
 			await editor.loadImage(savedUrl);
-			editor.setContrast(savedFilters.contrast);
-			editor.setTemperature(savedFilters.temperature);
-			editor.setSaturation(savedFilters.saturation);
-			editor.setEnhance(savedFilters.enhance);
-			editor.setBlur(savedFilters.blur);
-			editor.setShadow(savedFilters.shadow);
-			editor.setHighlight(savedFilters.highlight);
-			if (savedImageState) {
-				await nextTick();
-				setTimeout(() => {
-					editor.setImageState(savedImageState);
-				}, 100);
-			}
 		}
 
 		if (!isFirstLoad) {
