@@ -1,0 +1,260 @@
+---
+description: 项目构建和组件规范
+alwaysApply: true
+---
+
+# 媒体编辑器项目规范
+
+## 技术栈
+
+- **框架**: Vue 3.5+ (Composition API + `<script setup>`)
+- **构建工具**: Rspack (主要) / Vite (备选)
+- **语言**: TypeScript 5.x
+- **路由**: Vue Router 4.x
+- **画布**: Konva + vue-konva
+- **视频处理**: FFmpeg.wasm (@ffmpeg/ffmpeg) + WebAV (@webav/av-cliper)
+- **图形渲染**: WebGL (自定义着色器)
+
+## 项目结构
+
+```
+src/
+├── components/          # 通用组件
+│   ├── EffectsPanel/    # 效果控制面板
+│   ├── ErrorOverlay/    # 错误提示组件
+│   ├── TimeLine/        # 时间轴组件
+│   ├── Toast/           # 提示组件
+│   └── VideoPreview/    # 视频预览 (WebGL)
+├── page/                # 页面组件
+│   ├── PhotoEditor/     # 图片编辑器
+│   └── VideoEditor/     # 视频编辑器
+├── package/             # 核心处理逻辑
+│   ├── Image/           # 图片处理
+│   │   ├── KonvaFilter/ # Konva 滤镜
+│   │   └── ImageEditor.ts
+│   └── Video/           # 视频处理
+│       ├── ffmpeg/      # FFmpeg 封装
+│       ├── webav/       # WebAV 封装
+│       ├── shaders.ts   # 共享 WebGL 着色器
+│       ├── filters.ts   # CPU 滤镜回退
+│       └── types.ts     # 类型定义
+├── router/              # 路由配置
+├── utils/               # 工具函数
+└── assets/              # 静态资源
+```
+
+## 编码规范
+
+### Vue 组件
+
+- 使用 `<script setup lang="ts">` 语法
+- Props 使用 `defineProps<T>()` 配合 `withDefaults()` 定义默认值
+- Events 使用 `defineEmits<T>()` 定义类型
+- 组件文件命名: `index.vue` 或 `PascalCase.vue`
+- 样式使用 `<style scoped>` 隔离
+
+```vue
+<script setup lang="ts">
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+
+interface Props {
+  modelValue: string;
+  disabled?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  disabled: false,
+});
+
+const emit = defineEmits<{
+  (e: "update:modelValue", value: string): void;
+  (e: "change", value: string): void;
+}>();
+</script>
+```
+
+### TypeScript
+
+- 类型定义集中在 `types.ts` 文件，与业务逻辑分离
+- 常量定义集中在 `constants.ts` 文件，避免魔法数字和硬编码
+- 使用 `interface` 定义对象类型
+- 导出类型使用 `export type` 或 `export interface`
+- 避免使用 `any`，优先使用 `unknown` 或具体类型
+
+```typescript
+// ✅ 正确: 类型和常量独立文件
+// types.ts
+export interface VideoFilterOptions {
+  speed?: number;
+  contrast?: number;
+}
+
+// constants.ts
+export const DEFAULT_FILTER_VALUES: Required<VideoFilterOptions> = {
+  speed: 1.0,
+  contrast: 1.0,
+};
+
+// ❌ 错误: 类型和常量混在业务逻辑中
+```
+
+### 异步编程
+
+- **必须**使用 ES6 `async/await` 语法，禁止使用 `.then()` 链式调用
+- 异步错误使用 `try/catch` 捕获
+- 并行异步操作使用 `Promise.all()` 或 `Promise.allSettled()`
+
+```typescript
+// ✅ 正确: async/await
+async function loadVideo(file: File): Promise<VideoData> {
+  try {
+    const buffer = await file.arrayBuffer();
+    const clip = await createClip(buffer);
+    return clip;
+  } catch (error) {
+    console.error("加载失败:", error);
+    throw error;
+  }
+}
+
+// ✅ 正确: 并行加载
+const [videoData, audioData] = await Promise.all([
+  loadVideo(videoFile),
+  loadAudio(audioFile),
+]);
+
+// ❌ 错误: Promise 链式调用
+function loadVideo(file: File) {
+  return file.arrayBuffer()
+    .then(buffer => createClip(buffer))
+    .then(clip => clip)
+    .catch(error => { throw error; });
+}
+```
+
+### 代码复用
+
+- **最大化复用**: 相同逻辑必须提取为通用函数，禁止复制粘贴代码
+- **Vue Hooks**: 通用状态逻辑提取到 `src/hooks/` 目录，以 `use` 前缀命名
+- **工具函数**: 通用工具函数提取到 `src/utils/` 目录
+- **必须添加 JSDoc 注释**: 所有公共函数、hooks、类型必须有完整注释
+
+```typescript
+// ✅ 正确: hooks/useVideoPlayer.ts - 带完整注释的 Hook
+/**
+ * 视频播放器状态管理 Hook
+ * @description 封装视频播放、暂停、进度控制等通用逻辑
+ * @param videoElement - 视频元素引用
+ * @returns 播放状态和控制方法
+ * @example
+ * const { isPlaying, currentTime, play, pause, seek } = useVideoPlayer(videoRef);
+ */
+export function useVideoPlayer(videoElement: Ref<HTMLVideoElement | null>) {
+  const isPlaying = ref(false);
+  const currentTime = ref(0);
+
+  /**
+   * 播放视频
+   * @throws {Error} 当视频元素不存在时抛出错误
+   */
+  const play = async (): Promise<void> => {
+    if (!videoElement.value) throw new Error("视频元素不存在");
+    await videoElement.value.play();
+    isPlaying.value = true;
+  };
+
+  return { isPlaying, currentTime, play };
+}
+
+// ✅ 正确: utils/format.ts - 带注释的工具函数
+/**
+ * 格式化时间为 MM:SS 格式
+ * @param seconds - 秒数
+ * @returns 格式化后的时间字符串
+ * @example
+ * formatTime(125) // "02:05"
+ */
+export function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+// ❌ 错误: 无注释、逻辑重复
+export function formatTime(s: number) {
+  return `${Math.floor(s / 60)}:${Math.floor(s % 60)}`;
+}
+```
+
+#### 注释规范
+
+| 元素 | 必须注释内容 |
+|------|-------------|
+| 函数/方法 | `@description`, `@param`, `@returns`, `@throws` (如有), `@example` |
+| Hook | `@description`, `@param`, `@returns`, `@example` |
+| 类 | `@description`, 构造函数参数说明 |
+| 接口/类型 | 每个属性的用途说明 |
+| 常量 | 用途说明，取值范围 (如有) |
+
+### 视频处理架构
+
+项目采用双引擎架构，通过抽象层统一接口:
+
+```typescript
+// VideoWrapper 接口定义处理能力
+interface VideoWrapper {
+  init(): Promise<void>;
+  applyFilters(inputFile: File, options: VideoFilterOptions): Promise<Blob>;
+  destroy(): void;
+}
+
+// VideoFilterOptions 定义滤镜参数
+interface VideoFilterOptions {
+  speed?: number;      // 0.25 - 4.0
+  contrast?: number;   // 0.5 - 2.0
+  saturation?: number; // 0 - 3.0
+  temperature?: number; // -1.0 - 1.0
+  shadows?: number;    // 0 - 2.0
+  highlights?: number; // 0 - 2.0
+}
+```
+
+### WebGL 着色器
+
+- 着色器代码集中在 `src/package/Video/shaders.ts`
+- 预览和导出使用相同着色器确保一致性
+- CPU 回退逻辑在 `src/package/Video/filters.ts`
+
+### 滤镜一致性
+
+预览 (WebGL) 和导出 (FFmpeg/WebAV) 应保持视觉一致:
+
+- WebGL: 使用共享 GLSL 着色器
+- WebAV: 使用 WebGLFilterRenderer 或 CPU 回退
+- FFmpeg: 参数需调优匹配 WebGL 效果
+
+## 命令
+
+```bash
+pnpm run dev      # 启动 Rspack 开发服务器
+pnpm run build    # 生产构建
+pnpm run preview  # 预览生产构建
+pnpm run dev:vite # 使用 Vite 开发
+```
+
+## 注意事项
+
+1. **视频帧处理**: 注意 `VideoFrame.close()` 时机，避免编码器关闭错误
+2. **内存管理**: 及时释放 WebGL 上下文、Canvas、VideoFrame
+3. **响应式设计**: 组件需适配不同屏幕尺寸
+4. **错误处理**: 使用 ErrorOverlay 组件展示用户友好的错误信息
+5. **进度反馈**: FFmpeg 模式使用假进度优化用户体验
+
+## 依赖版本
+
+- Vue: ^3.5.24
+- Vue Router: ^4.6.4
+- Rspack: ^1.6.5
+- FFmpeg: @ffmpeg/ffmpeg + @ffmpeg/core ^0.12.10
+- WebAV: @webav/av-cliper ^1.2.7
+- Konva: ^10.0.12

@@ -18,6 +18,7 @@
     "@webav/av-canvas": "^1.2.7",
     "@webav/av-cliper": "^1.2.7",
     "konva": "^10.0.12",
+    "pixi.js": "^8.16.0",
     "vue": "^3.5.24",
     "vue-konva": "^3.2.6",
     "vue-router": "^4.6.4",
