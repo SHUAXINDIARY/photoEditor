@@ -340,9 +340,9 @@ const selectEngine = async (engine: EditorEngine) => {
 		await initImageEditor();
 
 		// 重新加载图片（不恢复滤镜状态）
-		const editor = imageEditor.value;
-		if (savedUrl && editor) {
-			await editor.loadImage(savedUrl);
+		// initImageEditor 成功后 imageEditor.value 已被赋值，使用非空断言
+		if (savedUrl && imageEditor.value) {
+			await (imageEditor.value as IImageEditor).loadImage(savedUrl);
 		}
 
 		if (!isFirstLoad) {
