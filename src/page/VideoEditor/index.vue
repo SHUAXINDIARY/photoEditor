@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
-import { VideoEditor, type VideoProcessingMode } from "../../package/Video/Video";
+import { VideoEditor, type VideoProcessingMode, DEFAULT_FILTER_VALUES, isDefaultFilters, getActiveEffects, getEffectDescriptions } from "@photoedit/video-editor";
 import TimeLine from "../../components/TimeLine/TimeLine.vue";
 import EffectsPanel from "../../components/EffectsPanel/index.vue";
 import VideoPreview from "../../components/VideoPreview/index.vue";
 import ErrorOverlay from "../../components/ErrorOverlay/index.vue";
 import { toastWarning, toastError, toastSuccess } from "../../utils/toast";
-import { DEFAULT_FILTER_VALUES, isDefaultFilters, getActiveEffects, getEffectDescriptions } from "../../package/Video/types";
 
 const router = useRouter();
 const videoUrl = ref<string>("");

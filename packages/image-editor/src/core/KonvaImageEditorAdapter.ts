@@ -1,5 +1,5 @@
-import { ImageEditor } from '../Image/ImageEditor';
-import type { IImageEditor, ImageEditorConfig, ImageState } from './types';
+import { ImageEditor } from '../konva/ImageEditor';
+import type { IImageEditor, ImageEditorConfig, ImageState } from '../types';
 
 /**
  * Konva 编辑器适配器

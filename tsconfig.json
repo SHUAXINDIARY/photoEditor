@@ -19,5 +19,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [
+    { "path": "./packages/image-editor" },
+    { "path": "./packages/video-editor" }
+  ]
 }

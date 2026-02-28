@@ -9,7 +9,7 @@ import {
     FRAGMENT_SHADER,
     DEFAULT_FILTER_PARAMS,
     type FilterParams,
-} from "../../package/Video/shaders";
+} from "@photoedit/video-editor";
 
 // 重新导出类型和常量，保持兼容性
 export type { FilterParams };
