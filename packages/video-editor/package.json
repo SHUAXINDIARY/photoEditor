@@ -1,0 +1,16 @@
+{
+  "name": "@photoedit/video-editor",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.0",
+    "@ffmpeg/core": "^0.12.0",
+    "@ffmpeg/util": "*",
+    "@webav/av-cliper": "^1.2.0"
+  }
+}

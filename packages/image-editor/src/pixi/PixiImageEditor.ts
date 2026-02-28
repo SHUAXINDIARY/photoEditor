@@ -1,8 +1,8 @@
 import { Application, Sprite, Container, Rectangle } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
-import type { IImageEditor, ImageEditorConfig, ImageState } from '../editor/types';
-import { calcImageFitLayout } from '../editor/canvasLayout';
-import type { ImageFitLayout } from '../editor/canvasLayout';
+import type { IImageEditor, ImageEditorConfig, ImageState } from '../types';
+import { calcImageFitLayout } from '../core/canvasLayout';
+import type { ImageFitLayout } from '../core/canvasLayout';
 import { PixiFilterManager } from './PixiFilterManager';
 import { PixiBrushManager } from './PixiBrushManager';
 import { PixiTransformer } from './PixiTransformer';

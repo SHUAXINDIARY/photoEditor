@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick, onBeforeUnmount } from "vue";
-import { createImageEditor } from "../../package/editor";
-import type { IImageEditor, EditorEngine } from "../../package/editor";
-import { calcCanvasSize } from "../../package/editor/canvasLayout";
+import { createImageEditor, calcCanvasSize } from "@photoedit/image-editor";
+import type { IImageEditor, EditorEngine } from "@photoedit/image-editor";
 import { throttle } from "../../utils/utils";
 import { toastSuccess, toastWarning, toastError } from "../../utils/toast";
 const containerRef = ref<HTMLDivElement | null>(null);

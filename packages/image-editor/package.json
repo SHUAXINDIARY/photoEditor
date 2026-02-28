@@ -1,0 +1,14 @@
+{
+  "name": "@photoedit/image-editor",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "konva": "^10.0.0",
+    "pixi.js": "^8.0.0"
+  }
+}

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { VideoFilterOptions } from "../../package/Video/types";
-import { DEFAULT_FILTER_VALUES } from "../../package/Video/types";
+import type { VideoFilterOptions } from "@photoedit/video-editor";
+import { DEFAULT_FILTER_VALUES } from "@photoedit/video-editor";
 
 // 组件参数
 interface Props {

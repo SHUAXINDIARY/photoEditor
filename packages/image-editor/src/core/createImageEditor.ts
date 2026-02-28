@@ -1,4 +1,4 @@
-import type { IImageEditor, ImageEditorConfig, EditorEngine } from './types';
+import type { IImageEditor, ImageEditorConfig, EditorEngine } from '../types';
 
 /**
  * 创建图片编辑器的工厂选项

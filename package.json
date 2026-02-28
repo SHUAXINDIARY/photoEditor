@@ -12,6 +12,8 @@
     "start": "npm run dev:vite"
   },
   "dependencies": {
+    "@photoedit/image-editor": "workspace:*",
+    "@photoedit/video-editor": "workspace:*",
     "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "*",
     "@ffmpeg/util": "*",

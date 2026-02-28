@@ -1,8 +1,8 @@
 import Konva from "konva";
 import { registerCustomFilters } from "./KonvaFilter";
 import { ImageFilterManager } from "./ImageFilterManager";
-import { calcImageFitLayout } from "../editor/canvasLayout";
-import type { ImageFitLayout } from "../editor/canvasLayout";
+import { calcImageFitLayout } from "../core/canvasLayout";
+import type { ImageFitLayout } from "../core/canvasLayout";
 
 // 注册自定义滤镜（只注册一次）
 let filtersRegistered = false;

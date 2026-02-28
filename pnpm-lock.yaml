@@ -17,6 +17,12 @@ importers:
       '@ffmpeg/util':
         specifier: '*'
         version: 0.12.2
+      '@photoedit/image-editor':
+        specifier: workspace:*
+        version: link:packages/image-editor
+      '@photoedit/video-editor':
+        specifier: workspace:*
+        version: link:packages/video-editor
       '@webav/av-canvas':
         specifier: ^1.2.7
         version: 1.2.7
@@ -60,6 +66,30 @@ importers:
       vue-loader:
         specifier: ^17.4.2
         version: 17.4.2(vue@3.5.25(typescript@5.9.3))(webpack@5.103.0)
+
+  packages/image-editor:
+    dependencies:
+      konva:
+        specifier: ^10.0.0
+        version: 10.0.12
+      pixi.js:
+        specifier: ^8.0.0
+        version: 8.16.0
+
+  packages/video-editor:
+    dependencies:
+      '@ffmpeg/core':
+        specifier: ^0.12.0
+        version: 0.12.10
+      '@ffmpeg/ffmpeg':
+        specifier: ^0.12.0
+        version: 0.12.15
+      '@ffmpeg/util':
+        specifier: '*'
+        version: 0.12.2
+      '@webav/av-cliper':
+        specifier: ^1.2.0
+        version: 1.2.7
 
 packages:
 
