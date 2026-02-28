@@ -166,79 +166,87 @@
 ### 目录结构（核心部分）
 
 ```text
-src/
-  App.vue                        # 应用主入口，导航栏和路由视图
-  main.ts                        # Vue 启动入口
-  router/
-    index.ts                     # Vue Router 路由配置
-  page/
-    PhotoEditor/
-      index.vue                  # 图片编辑器页面组件
-    VideoEditor/
-      index.vue                  # 视频编辑器页面组件
-  package/
-    editor/                      # 图片编辑器通用 API 层
-      index.ts                   # 导出统一接口
-      types.ts                   # IImageEditor 接口和类型定义
-      createImageEditor.ts       # 工厂函数，根据引擎创建实例
-      KonvaImageEditorAdapter.ts # Konva 引擎适配器
-      canvasLayout.ts            # 画布布局计算（引擎无关）
-    Image/                       # Konva 图片处理实现
-      ImageEditor.ts             # Konva 封装的图片编辑器核心类
-      ImageFilterManager.ts      # Konva 滤镜管理模块
-      KonvaFilter/               # Konva 自定义滤镜
-        index.ts                 # 注册所有自定义滤镜
-        contrast.ts              # 对比度滤镜（LUT 优化）
-        temperature.ts           # 色温滤镜
-        shadow.ts                # 阴影滤镜
-        highlight.ts             # 高光滤镜
-        tint.ts                  # 预留色调滤镜
-    pixi/                        # PixiJS 图片处理实现
-      index.ts                   # 导出 PixiJS 模块
-      PixiImageEditor.ts         # PixiJS 图片编辑器实现
-      PixiFilterManager.ts       # PixiJS GPU 滤镜管理器
-      PixiBrushManager.ts        # PixiJS 画笔管理器
-      PixiTransformer.ts         # PixiJS 变换控制器（缩放控制点）
-      shaders.ts                 # GLSL 着色器源码
-    Video/                       # 视频处理模块
-      Video.ts                   # 视频编辑器抽象层
-      types.ts                   # 视频滤镜类型定义
-      shaders.ts                 # 视频 WebGL 着色器
-      filters.ts                 # CPU 滤镜回退方案
-      ffmpeg/
-        index.ts                 # FFmpeg 实现（FFmpegWrapper）
-      webav/
-        index.ts                 # WebAV 实现（WebAVWrapper）
-        WebGLFilterRenderer.ts   # WebGL 滤镜渲染器（导出用）
-  components/
-    TimeLine/
-      TimeLine.vue               # 视频时间轴组件
-    EffectsPanel/
-      index.vue                  # 效果调节面板组件
-    VideoPreview/
-      index.vue                  # WebGL 视频预览组件
-      WebGLRenderer.ts           # WebGL 滤镜渲染器（预览用）
-    ErrorOverlay/
-      index.vue                  # 加载失败错误页面组件
-    Toast/
-      index.vue                  # 轻提示组件
-  utils/
-    utils.ts                     # throttle、debounce 等工具
-    toast.ts                     # Toast 工具函数
-  assets/
-    zoom-in.svg                  # 放大图标
-    zoom-out.svg                 # 缩小图标
+photoEdit/
+├── pnpm-workspace.yaml          # pnpm workspace 配置
+├── package.json                 # 主应用（引用 workspace 包）
+├── tsconfig.json                # TypeScript project references
+├── packages/                    # 独立包目录
+│   ├── image-editor/            # @photoedit/image-editor
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts         # 统一导出
+│   │       ├── types.ts         # IImageEditor 接口和类型定义
+│   │       ├── core/            # 核心逻辑（引擎无关）
+│   │       │   ├── canvasLayout.ts
+│   │       │   ├── createImageEditor.ts
+│   │       │   └── KonvaImageEditorAdapter.ts
+│   │       ├── konva/           # Konva 引擎实现
+│   │       │   ├── ImageEditor.ts
+│   │       │   ├── ImageFilterManager.ts
+│   │       │   └── KonvaFilter/
+│   │       │       ├── index.ts
+│   │       │       ├── contrast.ts
+│   │       │       ├── temperature.ts
+│   │       │       ├── shadow.ts
+│   │       │       ├── highlight.ts
+│   │       │       └── tint.ts
+│   │       └── pixi/            # PixiJS 引擎实现
+│   │           ├── PixiImageEditor.ts
+│   │           ├── PixiFilterManager.ts
+│   │           ├── PixiBrushManager.ts
+│   │           ├── PixiTransformer.ts
+│   │           └── shaders.ts
+│   └── video-editor/            # @photoedit/video-editor
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── index.ts         # 统一导出
+│           ├── types.ts         # 视频滤镜类型定义
+│           ├── VideoEditor.ts   # 视频编辑器抽象层
+│           ├── shaders.ts       # 视频 WebGL 着色器
+│           ├── filters.ts       # CPU 滤镜回退方案
+│           ├── ffmpeg/          # FFmpeg 引擎
+│           │   └── index.ts
+│           └── webav/           # WebAV 引擎
+│               ├── index.ts
+│               └── WebGLFilterRenderer.ts
+└── src/                         # 主应用
+    ├── App.vue                  # 应用主入口
+    ├── main.ts                  # Vue 启动入口
+    ├── router/
+    │   └── index.ts             # Vue Router 路由配置
+    ├── page/
+    │   ├── PhotoEditor/
+    │   │   └── index.vue        # 图片编辑器页面组件
+    │   └── VideoEditor/
+    │       └── index.vue        # 视频编辑器页面组件
+    ├── components/
+    │   ├── TimeLine/
+    │   │   └── TimeLine.vue     # 视频时间轴组件
+    │   ├── EffectsPanel/
+    │   │   └── index.vue        # 效果调节面板组件
+    │   ├── VideoPreview/
+    │   │   ├── index.vue        # WebGL 视频预览组件
+    │   │   └── WebGLRenderer.ts # WebGL 滤镜渲染器（预览用）
+    │   ├── ErrorOverlay/
+    │   │   └── index.vue        # 加载失败错误页面组件
+    │   └── Toast/
+    │       └── index.vue        # 轻提示组件
+    ├── utils/
+    │   ├── utils.ts             # throttle、debounce 等工具
+    │   └── toast.ts             # Toast 工具函数
+    └── assets/
+        ├── zoom-in.svg          # 放大图标
+        └── zoom-out.svg         # 缩小图标
 ```
 
-整体采用「**模块化分层架构**」：
+整体采用「**pnpm workspace monorepo 架构**」：
 
-- **`App.vue`**：应用主入口，提供导航栏和路由视图容器
-- **`PhotoEditor/index.vue`**：图片编辑器页面，负责 UI、状态管理和引擎选择
-- **`VideoEditor/index.vue`**：视频编辑器页面，负责 UI、状态管理和处理模式选择
-- **`package/editor`**：图片编辑器通用 API 层，定义 `IImageEditor` 接口和工厂函数
-- **`package/Image`**：Konva 引擎实现
-- **`package/pixi`**：PixiJS 引擎实现
-- **`VideoEditor` 类**：视频编辑器抽象层，支持 FFmpeg 和 WebAV 两种底层实现
+- **`packages/image-editor`**（`@photoedit/image-editor`）：图片编辑器核心包，支持 Konva (CPU) 和 PixiJS (GPU) 双引擎
+- **`packages/video-editor`**（`@photoedit/video-editor`）：视频编辑器核心包，支持 FFmpeg (WASM) 和 WebAV (WebCodecs) 双引擎
+- **`src/`**：主应用，负责 UI、状态管理和路由，通过 workspace 协议引用核心包
+- **开发时源码直接引用**：无需单独构建子包，主应用构建工具直接编译 `packages/*/src/*.ts`
 
 ### 图片编辑器双引擎架构
 
@@ -509,7 +517,15 @@ pnpm run preview
 
 ## 更新日志
 
-### v1.4.0 (最新)
+### v1.5.0 (最新)
+- **pnpm workspace monorepo 架构**：将图片编辑器和视频编辑器拆分为独立包
+- **`@photoedit/image-editor`**：图片编辑器核心包，支持 Konva/PixiJS 双引擎
+- **`@photoedit/video-editor`**：视频编辑器核心包，支持 FFmpeg/WebAV 双引擎
+- **TypeScript project references**：优化 IDE 类型检查和构建性能
+- **源码直接引用**：开发时无需单独构建子包，主应用直接编译源码
+- **Git 历史保留**：使用 `git mv` 迁移文件，保留完整提交历史
+
+### v1.4.0
 - **图片编辑器双引擎架构**：支持 Konva (CPU) 和 PixiJS (GPU) 两种渲染引擎
 - **统一 IImageEditor 接口**：业务层无需关心底层实现，可无缝切换引擎
 - **PixiJS GPU 加速**：使用 WebGL shader 实现滤镜，性能更优
